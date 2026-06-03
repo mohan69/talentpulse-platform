@@ -1,0 +1,821 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "../node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------
+// ENUMS
+// ---------------------------------------
+enum UserRole {
+  ADMIN
+  RECRUITER
+  CLIENT
+  CANDIDATE
+}
+
+enum JobStatus {
+  OPEN
+  ON_HOLD
+  CLOSED
+  FILLED
+}
+
+enum JobPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum PipelineStage {
+  NEW
+  AI_SCREENING
+  REVIEWED
+  SUBMITTED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETE
+  OFFER_EXTENDED
+  OFFER_ACCEPTED
+  JOINED
+  REJECTED
+  ON_HOLD
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+enum InterviewOutcome {
+  PROCEED
+  REJECT
+  ON_HOLD
+  PENDING
+}
+
+enum OfferStatus {
+  PENDING
+  EXTENDED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum CandidateSource {
+  LINKEDIN
+  NAUKRI
+  REFERRAL
+  INTERNAL_DB
+  DIRECT
+  OTHER
+}
+
+enum NaukriImportStatus {
+  PARSING
+  PARSED
+  FAILED
+}
+
+enum NaukriCandidateStatus {
+  NEW
+  MATCHED
+  IMPORTED
+  REJECTED
+  DUPLICATE
+}
+
+enum ProspectStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  QUALIFIED
+  CONVERTED
+  NOT_INTERESTED
+  NOT_REACHABLE
+  REJECTED
+}
+
+// ---------------------------------------
+// USERS (multi-role)
+// ---------------------------------------
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  name           String
+  role           UserRole  @default(RECRUITER)
+  phone          String?
+  avatarUrl      String?
+  isActive       Boolean   @default(true)
+  clientId       String?
+  client         Client?   @relation(fields: [clientId], references: [id])
+  candidateId    String?   @unique
+  candidate      Candidate? @relation(fields: [candidateId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  assignedJobs   Job[]            @relation("RecruiterJobs")
+  createdJobs    Job[]            @relation("CreatedJobs")
+  ownedCandidates Candidate[]     @relation("CandidateOwner")
+  interviews     Interview[]
+  activities     ActivityLog[]
+  notes          Note[]
+  sentEmails     EmailLog[]       @relation("EmailSender")
+  platformSubs   PlatformSubscription[]
+  jobPostings    JobPosting[]           @relation("PostedByUser")
+  naukriImports  NaukriImport[]
+  prospects      Prospect[]     @relation("ProspectOwner")
+  savedSearches  SavedSearch[]
+
+  @@index([role])
+  @@index([clientId])
+}
+
+// ---------------------------------------
+// CLIENTS (enterprise companies)
+// ---------------------------------------
+model Client {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  industry    String?
+  website     String?
+  logoUrl     String?
+  description String?
+  address     String?
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  jobs        Job[]
+
+  @@index([isActive])
+}
+
+// ---------------------------------------
+// JOBS (requisitions)
+// ---------------------------------------
+model Job {
+  id             String      @id @default(cuid())
+  title          String
+  clientId       String
+  client         Client      @relation(fields: [clientId], references: [id])
+  location       String
+  jobType        String      @default("Full-time") // Full-time, Contract, etc.
+  experienceMin  Int         @default(0)
+  experienceMax  Int         @default(0)
+  skills         String[]    @default([])
+  description    String
+  salaryMin      Int?
+  salaryMax      Int?
+  currency       String      @default("INR")
+  openings       Int         @default(1)
+  priority       JobPriority @default(MEDIUM)
+  status         JobStatus   @default(OPEN)
+  sourcePrefs    String[]    @default([])
+  createdById    String
+  createdBy      User        @relation("CreatedJobs", fields: [createdById], references: [id])
+  recruiterId    String?
+  recruiter      User?       @relation("RecruiterJobs", fields: [recruiterId], references: [id])
+  aiParsedData   Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  applications       Application[]
+  jobPostings        JobPosting[]
+  naukriCandidates   NaukriCandidate[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([recruiterId])
+}
+
+// ---------------------------------------
+// CANDIDATES
+// ---------------------------------------
+model Candidate {
+  id                   String   @id @default(cuid())
+  name                 String
+  email                String   @unique
+  phone                String?
+  altPhone             String?
+  currentCity          String?
+  preferredLocations   String[] @default([])
+  willRelocate         Boolean  @default(false)
+  currentCompany       String?
+  currentDesignation   String?
+  totalExperience      Float    @default(0)
+  relevantExperience   Float    @default(0)
+  skills               String[] @default([])
+  degree               String?
+  institution          String?
+  graduationYear       Int?
+  currentCtc           Float?
+  expectedCtc          Float?
+  ctcFixed             Float?
+  ctcVariable          Float?
+  noticePeriod         Int?     // in days
+  lastWorkingDay       DateTime?
+  canBuyOut            Boolean  @default(false)
+  employmentGapNotes   String?
+  resumeUrl            String?
+  resumeKey            String?
+  source               CandidateSource @default(OTHER)
+  linkedinUrl          String?
+  aiSummary            String?
+  aiScreeningData      Json?
+  ownerId              String?
+  owner                User?    @relation("CandidateOwner", fields: [ownerId], references: [id])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  applications         Application[]
+  projects             Project[]
+  notes                Note[]
+  interviews           Interview[]
+  offers               Offer[]
+  emailLogs            EmailLog[]
+  user                 User?
+  voiceScreenings      VoiceScreening[]
+  whatsappMessages     WhatsAppMessage[]
+  naukriCandidates     NaukriCandidate[]
+  convertedFromProspect Prospect?
+
+  @@index([email])
+  @@index([phone])
+  @@index([source])
+}
+
+model Project {
+  id             String    @id @default(cuid())
+  candidateId    String
+  candidate      Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  projectName    String
+  role           String
+  skillsUsed     String[]  @default([])
+  description    String
+  contribution   String
+  createdAt      DateTime  @default(now())
+
+  @@index([candidateId])
+}
+
+// ---------------------------------------
+// APPLICATIONS (candidate-job mapping)
+// ---------------------------------------
+model Application {
+  id           String        @id @default(cuid())
+  candidateId  String
+  candidate    Candidate     @relation(fields: [candidateId], references: [id])
+  jobId        String
+  job          Job           @relation(fields: [jobId], references: [id])
+  stage        PipelineStage @default(NEW)
+  matchScore   Float?        // 0-100
+  noShowRisk   Float?        // 0-100
+  aiReport     Json?
+  submittedAt  DateTime?
+  clientFeedback String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  interviews      Interview[]
+  offers          Offer[]
+  voiceScreenings VoiceScreening[]
+
+  @@unique([candidateId, jobId])
+  @@index([stage])
+  @@index([jobId])
+  @@index([candidateId])
+}
+
+// ---------------------------------------
+// INTERVIEWS
+// ---------------------------------------
+model Interview {
+  id            String           @id @default(cuid())
+  applicationId String
+  application   Application      @relation(fields: [applicationId], references: [id])
+  candidateId   String
+  candidate     Candidate        @relation(fields: [candidateId], references: [id])
+  round         String           // L1, L2, Client, Stakeholder
+  scheduledAt   DateTime
+  durationMins  Int              @default(60)
+  interviewerId String?
+  interviewer   User?            @relation(fields: [interviewerId], references: [id])
+  interviewerName String?
+  meetingLink   String?
+  mode          String           @default("Video")  // Video, Phone, In-Person
+  status        InterviewStatus  @default(SCHEDULED)
+  outcome       InterviewOutcome @default(PENDING)
+  rating        Int?             // 1-5
+  feedback      String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([applicationId])
+  @@index([candidateId])
+  @@index([scheduledAt])
+}
+
+// ---------------------------------------
+// OFFERS
+// ---------------------------------------
+model Offer {
+  id              String      @id @default(cuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  candidateId     String
+  candidate       Candidate   @relation(fields: [candidateId], references: [id])
+  offeredCtc      Float
+  fixedCtc        Float?
+  variableCtc     Float?
+  joiningDate     DateTime?
+  status          OfferStatus @default(PENDING)
+  notes           String?
+  feePercent      Float?      // recruitment fee %
+  feeAmount       Float?
+  paymentStatus   String?     // Pending, Invoiced, Paid
+  actualJoinedAt  DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([status])
+}
+
+// ---------------------------------------
+// JOB POSTINGS (cross-platform tracking)
+// ---------------------------------------
+enum JobPostingStatus {
+  PENDING
+  POSTED
+  EXPIRED
+  FAILED
+  SKIPPED
+}
+
+model JobPosting {
+  id           String           @id @default(cuid())
+  jobId        String
+  job          Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  platformId   String
+  platform     RecruitingPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  status       JobPostingStatus @default(PENDING)
+  postUrl      String?
+  postedById   String?
+  postedBy     User?            @relation("PostedByUser", fields: [postedById], references: [id])
+  postedAt     DateTime?
+  expiresAt    DateTime?
+  notes        String?
+  autoPosted   Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([jobId, platformId])
+  @@index([jobId])
+  @@index([platformId])
+  @@index([status])
+}
+
+// ---------------------------------------
+// RECRUITING PLATFORMS & SUBSCRIPTIONS
+// ---------------------------------------
+model RecruitingPlatform {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  websiteUrl  String?
+  logoUrl     String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions PlatformSubscription[]
+  jobPostings   JobPosting[]
+}
+
+model PlatformSubscription {
+  id              String   @id @default(cuid())
+  platformId      String
+  platform        RecruitingPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  recruiterId     String
+  recruiter       User     @relation(fields: [recruiterId], references: [id])
+  username        String?
+  encryptedPass   String?
+  planName        String?
+  profileLimit    Int?
+  jobPostLimit    Int?
+  profilesUsed    Int      @default(0)
+  jobsPosted      Int      @default(0)
+  monthlyCost     Float?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  isActive        Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([platformId, recruiterId])
+  @@index([recruiterId])
+  @@index([platformId])
+}
+
+// ---------------------------------------
+// INTEGRATION SETTINGS (API keys store)
+// ---------------------------------------
+model IntegrationSetting {
+  id          String   @id @default(cuid())
+  provider    String   @unique   // TWILIO, WHATSAPP, GOOGLE_CALENDAR, OUTLOOK_CALENDAR
+  config      Json     // encrypted config JSON (apiKey, accountSid, authToken, etc.)
+  isActive    Boolean  @default(false)
+  lastTested  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------
+// VOICE AI SCREENING
+// ---------------------------------------
+enum VoiceCallStatus {
+  QUEUED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  BUSY
+  CANCELLED
+}
+
+model VoiceScreening {
+  id              String          @id @default(cuid())
+  applicationId   String
+  application     Application     @relation(fields: [applicationId], references: [id])
+  candidateId     String
+  candidate       Candidate       @relation(fields: [candidateId], references: [id])
+  phoneNumber     String
+  callStatus      VoiceCallStatus @default(QUEUED)
+  callDuration    Int?            // seconds
+  externalCallId  String?         // Twilio/Exotel call SID
+  conversationId  String?         // ElevenLabs conversation ID for fetching transcript
+  transcript      String?
+  aiSummary       String?
+  aiScore         Float?          // 0-100
+  aiScoreBreakdown Json?         // { communication: 80, technical: 70, ... }
+  questions       Json?           // array of screening questions used
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  recordingUrl    String?
+  initiatedById   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([applicationId])
+  @@index([candidateId])
+  @@index([callStatus])
+}
+
+// ---------------------------------------
+// WHATSAPP MESSAGES
+// ---------------------------------------
+enum WhatsAppMsgStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WhatsAppMsgDirection {
+  OUTBOUND
+  INBOUND
+}
+
+model WhatsAppTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  body        String
+  category    String   // outreach, status_update, interview, follow_up, offer
+  variables   String[] @default([])
+  isApproved  Boolean  @default(false)  // WA Business API requires template approval
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages    WhatsAppMessage[]
+}
+
+model WhatsAppMessage {
+  id              String              @id @default(cuid())
+  candidateId     String?
+  candidate       Candidate?          @relation(fields: [candidateId], references: [id])
+  phoneNumber     String
+  direction       WhatsAppMsgDirection @default(OUTBOUND)
+  templateId      String?
+  template        WhatsAppTemplate?   @relation(fields: [templateId], references: [id])
+  body            String
+  status          WhatsAppMsgStatus   @default(QUEUED)
+  externalMsgId   String?             // WA message ID
+  sentById        String?
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  metadata        Json?
+  createdAt       DateTime            @default(now())
+
+  @@index([candidateId])
+  @@index([phoneNumber])
+  @@index([status])
+}
+
+// ---------------------------------------
+// EMAIL OUTREACH CAMPAIGNS
+// ---------------------------------------
+enum OutreachStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+enum OutreachType {
+  CANDIDATE
+  BD_CLIENT
+}
+
+model EmailCampaign {
+  id           String         @id @default(cuid())
+  name         String
+  type         OutreachType   @default(CANDIDATE)
+  subject      String
+  body         String
+  status       OutreachStatus @default(DRAFT)
+  aiGenerated  Boolean        @default(false)
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  createdById  String
+  totalRecipients Int         @default(0)
+  sentCount    Int            @default(0)
+  failedCount  Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  recipients   CampaignRecipient[]
+
+  @@index([status])
+  @@index([createdById])
+}
+
+model CampaignRecipient {
+  id           String    @id @default(cuid())
+  campaignId   String
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  email        String
+  name         String?
+  candidateId  String?
+  status       String    @default("pending") // pending, sent, failed
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([campaignId])
+  @@unique([campaignId, email])
+}
+
+// ---------------------------------------
+// CALENDAR SYNC
+// ---------------------------------------
+model CalendarConnection {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // google, outlook
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  calendarId   String?
+  email        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+// ---------------------------------------
+// NOTES, ACTIVITY, EMAIL
+// ---------------------------------------
+model Note {
+  id          String    @id @default(cuid())
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id])
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  body        String
+  createdAt   DateTime  @default(now())
+
+  @@index([candidateId])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  entityType  String   // "candidate", "job", "application", "interview"
+  entityId    String
+  action      String   // "created", "stage_changed", "submitted", etc.
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model EmailTemplate {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  subject    String
+  body       String
+  category   String   // screening, interview, offer, joining, follow-up
+  variables  String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model EmailLog {
+  id          String    @id @default(cuid())
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id])
+  senderId    String?
+  sender      User?     @relation("EmailSender", fields: [senderId], references: [id])
+  subject     String
+  body        String
+  recipient   String
+  templateUsed String?
+  status      String    @default("sent") // sent, failed, queued
+  createdAt   DateTime  @default(now())
+
+  @@index([candidateId])
+}
+
+// ---------------------------------------
+// NAUKRI SEARCH ASSISTANT
+// ---------------------------------------
+model NaukriImport {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id])
+  rawData         String             // pasted RESDEX text
+  status          NaukriImportStatus @default(PARSING)
+  candidateCount  Int                @default(0)
+  searchQuery     String?            // optional: what was searched on Naukri
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  candidates      NaukriCandidate[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model NaukriCandidate {
+  id                  String               @id @default(cuid())
+  importId            String
+  import              NaukriImport         @relation(fields: [importId], references: [id], onDelete: Cascade)
+  name                String
+  email               String?
+  phone               String?
+  currentCompany      String?
+  designation         String?
+  experience          Float?
+  skills              String[]             @default([])
+  location            String?
+  currentCtc          String?
+  expectedCtc         String?
+  noticePeriod        String?
+  education           String?
+  summary             String?
+  naukriProfileId     String?
+
+  // AI job matching
+  matchedJobId        String?
+  matchedJob          Job?                 @relation(fields: [matchedJobId], references: [id])
+  matchScore          Float?
+  matchReason         String?
+
+  // Pipeline tracking
+  importedToPipeline  Boolean              @default(false)
+  candidateId         String?
+  candidate           Candidate?           @relation(fields: [candidateId], references: [id])
+  applicationId       String?
+
+  status              NaukriCandidateStatus @default(NEW)
+  createdAt           DateTime             @default(now())
+
+  @@index([importId])
+  @@index([status])
+  @@index([matchedJobId])
+}
+
+// ---------------------------------------
+// PROSPECTS (pre-candidate leads)
+// ---------------------------------------
+model Prospect {
+  id                 String          @id @default(cuid())
+  name               String
+  email              String?
+  phone              String?
+  altPhone           String?
+  currentCity        String?
+  currentCompany     String?
+  currentDesignation String?
+  totalExperience    Float?
+  skills             String[]        @default([])
+  degree             String?
+  institution        String?
+  currentCtc         Float?
+  expectedCtc        Float?
+  noticePeriod       Int?            // in days
+  linkedinUrl        String?
+  resumeUrl          String?
+  resumeKey          String?
+  source             CandidateSource @default(OTHER)
+  sourceDetail       String?         // e.g. "Naukri RESDEX batch import May 2026"
+  notes              String?
+  status             ProspectStatus  @default(NEW)
+  statusNote         String?
+  tags               String[]        @default([])
+
+  // Link to converted candidate
+  convertedCandidateId String?       @unique
+  convertedCandidate   Candidate?    @relation(fields: [convertedCandidateId], references: [id])
+
+  // Owner (recruiter)
+  ownerId            String?
+  owner              User?           @relation("ProspectOwner", fields: [ownerId], references: [id])
+
+  // Bulk import tracking
+  importBatchId      String?
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+  @@index([source])
+  @@index([ownerId])
+  @@index([importBatchId])
+}
+
+model SavedSearch {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  filters     Json     // stores all search filters as JSON
+  source      String   @default("INTERNAL") // INTERNAL, NAUKRI, FOUNDIT
+  resultCount Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model CompanyProfile {
+  id                String   @id @default("default")
+  name              String   @default("CareerPaths India")
+  brandName         String   @default("CareerPaths")
+  website           String   @default("")
+  email             String   @default("")
+  phone             String   @default("")
+  tagline           String   @default("")
+
+  // Registered Office
+  regAddress        String   @default("")
+  regCity           String   @default("")
+  regState          String   @default("")
+  regCountry        String   @default("India")
+
+  // Branch Office
+  branchAddress     String   @default("")
+  branchCity        String   @default("")
+  branchState       String   @default("")
+  branchCountry     String   @default("India")
+
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+}
