@@ -7,7 +7,7 @@ export default function AdminAdvancedSearchPage() {
   return (
     <>
       <PageTitle
-        title="Search in Portal"
+        title="Talent Intelligence Search"
         description="Search across Internal Database, Naukri, and FoundIT to find the right candidates"
       />
       <AdvancedSearchClient role="admin" />

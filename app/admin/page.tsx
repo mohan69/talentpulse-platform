@@ -22,7 +22,7 @@ export default async function AdminDashboard() {
 
   return (
     <>
-      <PageTitle title="Overview" description="Your recruitment pulse at a glance." />
+      <PageTitle title="Talent Intelligence Command Center" description="Your talent intelligence pulse at a glance." />
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard label="Prospects" value={totalProspects} icon={UserSearch} color="violet" hint="Active prospect leads" />
         <StatCard label="Open Jobs" value={openJobs} icon={Briefcase} color="primary" />

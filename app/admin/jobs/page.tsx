@@ -11,7 +11,7 @@ export default async function AdminJobs() {
   const jobs = await prisma.job.findMany({ orderBy: { createdAt: "desc" }, include: { client: true, recruiter: true, _count: { select: { applications: true } } } });
   return (
     <>
-      <PageTitle title="Jobs" description="All client positions across CareerPaths India." actions={<Link href="/admin/jobs/new"><Button><Plus className="h-4 w-4 mr-2" /> New Job</Button></Link>} />
+      <PageTitle title="Requisitions" description="All client positions across active engagements." actions={<Link href="/admin/jobs/new"><Button><Plus className="h-4 w-4 mr-2" /> New Job</Button></Link>} />
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {jobs.map((job) => (
           <div key={job.id} className="rounded-xl bg-card shadow-sm p-5 hover:shadow-md transition-shadow relative group">

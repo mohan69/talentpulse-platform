@@ -12,7 +12,7 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <PageTitle title="Reports" description="Generate and download recruitment reports" />
+      <PageTitle title="Reports & Analytics" description="Generate and download talent intelligence reports" />
       <ReportsClient clients={clients} />
     </>
   );

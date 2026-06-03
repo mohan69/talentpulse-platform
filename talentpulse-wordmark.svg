@@ -1,0 +1,25 @@
+<svg width="1580" height="420" viewBox="0 0 1580 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="58" y1="58" x2="336" y2="336" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B22F5"/>
+      <stop offset="0.52" stop-color="#0B5BFF"/>
+      <stop offset="1" stop-color="#14D4C4"/>
+    </linearGradient>
+    <linearGradient id="p" x1="78" y1="210" x2="316" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E26E6"/>
+      <stop offset="0.5" stop-color="#0B5BFF"/>
+      <stop offset="1" stop-color="#10CFC4"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(40 40) scale(.78)">
+    <path d="M136 133C94 167 68 216 68 271c0 48 20 91 52 123" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
+    <path d="M376 133c42 34 68 83 68 138 0 48-20 91-52 123" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
+    <circle cx="256" cy="83" r="35" fill="#0B5BFF"/>
+    <circle cx="90" cy="254" r="24" fill="white" stroke="#3827EA" stroke-width="18"/>
+    <circle cx="422" cy="254" r="24" fill="white" stroke="#13CFC4" stroke-width="18"/>
+    <circle cx="256" cy="432" r="24" fill="white" stroke="#0B5BFF" stroke-width="18"/>
+    <path d="M103 254h72l28 78 53-157 53 157 28-78h72" stroke="url(#p)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="430" y="260" font-family="Inter, Plus Jakarta Sans, Arial, sans-serif" font-size="142" font-weight="800" letter-spacing="-6" fill="#0B1226">Talent</text>
+  <text x="885" y="260" font-family="Inter, Plus Jakarta Sans, Arial, sans-serif" font-size="142" font-weight="800" letter-spacing="-6" fill="#0B5BFF">Pulse</text>
+</svg>

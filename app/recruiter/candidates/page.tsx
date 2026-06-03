@@ -11,7 +11,7 @@ export default async function RecruiterCandidates() {
   const candidates = await prisma.candidate.findMany({ orderBy: { createdAt: "desc" }, include: { _count: { select: { applications: true } } } });
   return (
     <>
-      <PageTitle title="Candidates" description="All candidates in the database." actions={<Link href="/recruiter/candidates/new"><Button><Plus className="h-4 w-4 mr-2" />Add Candidate</Button></Link>} />
+      <PageTitle title="Talent Repository" description="Talent intelligence across all candidates." actions={<Link href="/recruiter/candidates/new"><Button><Plus className="h-4 w-4 mr-2" />Add Candidate</Button></Link>} />
       <RecruiterCandidatesClient candidates={JSON.parse(JSON.stringify(candidates))} />
     </>
   );
