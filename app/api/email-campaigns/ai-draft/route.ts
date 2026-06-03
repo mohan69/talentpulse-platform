@@ -1,23 +1,44 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/guards";
-import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const client = new OpenAI({
-  apiKey: process.env.ABACUSAI_API_KEY,
-  baseURL: "https://api.abacus.ai/v1",
-});
+function createClient() {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.ABACUSAI_API_KEY || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+
+  const baseURL = process.env.OPENROUTER_BASE_URL || undefined;
+  const isOpenRouter = baseURL || !!process.env.OPENROUTER_API_KEY;
+
+  const { OpenAI } = require("openai");
+  return new OpenAI({
+    apiKey,
+    baseURL: baseURL || (isOpenRouter ? "https://openrouter.ai/api/v1" : "https://api.abacus.ai/v1"),
+  });
+}
+
+function getModel(isOpenRouter: boolean): string {
+  if (process.env.AI_MODEL) return process.env.AI_MODEL;
+  if (isOpenRouter) return "openai/gpt-4o-mini";
+  return "claude-sonnet-4-20250514";
+}
 
 export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const client = createClient();
+  if (!client) {
+    return NextResponse.json({ error: "AI provider API key is not configured" }, { status: 500 });
+  }
+
+  const isOpenRouter = !!(process.env.OPENROUTER_BASE_URL || process.env.OPENROUTER_API_KEY);
+
   const body = await req.json();
   const { type, context, tone, recipientInfo } = body;
 
-  const systemPrompt = `You are a professional recruitment email writer for CloudCXO, a top recruitment consultancy in India. Write concise, personalised outreach emails.
+  const systemPrompt = `You are a professional recruitment email writer for TalentPulse, an AI-powered recruitment platform. Write concise, personalised outreach emails.
 Return ONLY a JSON object with "subject" and "body" (HTML formatted) fields. No markdown wrapping.
 Use {{name}} placeholder for recipient name. Keep emails professional but warm, under 200 words.`;
 
@@ -33,7 +54,7 @@ Recipient info: ${recipientInfo || "Experienced professional"}`;
 
   try {
     const resp = await client.chat.completions.create({
-      model: "claude-sonnet-4-20250514",
+      model: getModel(isOpenRouter),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -43,7 +64,6 @@ Recipient info: ${recipientInfo || "Experienced professional"}`;
     });
 
     const raw = resp.choices?.[0]?.message?.content || "";
-    // Parse JSON from response
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
