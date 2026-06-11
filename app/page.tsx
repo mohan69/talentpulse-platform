@@ -21,10 +21,10 @@ import { FadeIn, Stagger, StaggerItem } from "@/components/ui/animate";
 import { BrandLogo } from "@/components/brand-logo";
 
 const VALUE_PROPS = [
-  { label: "AI-Powered Sourcing", desc: "Multi-platform candidate discovery and match scoring", icon: Rocket },
-  { label: "Automated Screening", desc: "AI evaluates resumes, skills, CTC, and fit in seconds", icon: BarChart3 },
-  { label: "Recruiter Copilot", desc: "AI assistant for summaries, outreach, and interview prep", icon: Zap },
-  { label: "Delivery-Ready Pipeline", desc: "Skills visibility, bench planning, and staffing readiness", icon: Target },
+  { label: "Faster Candidate Sourcing", desc: "Multi-platform candidate discovery and match scoring", icon: Rocket },
+  { label: "Reduced Screening Effort", desc: "AI evaluates resumes, skills, CTC, and fit in seconds", icon: BarChart3 },
+  { label: "Greater Recruiter Productivity", desc: "AI assistant for summaries, outreach, and interview prep", icon: Zap },
+  { label: "Unified Talent Intelligence", desc: "Skills visibility, bench planning, and staffing readiness", icon: Target },
 ];
 
 const BUILT_FOR = [
