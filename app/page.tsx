@@ -18,6 +18,8 @@ import {
   Clock,
   CheckCircle2,
   Eye,
+  ExternalLink,
+  Layers,
 } from "lucide-react";
 import { FadeIn, Stagger, StaggerItem } from "@/components/ui/animate";
 import { BrandLogo } from "@/components/brand-logo";
@@ -91,8 +93,7 @@ export default function LandingPage() {
               Hire Faster. Hire Better.<br /><span className="text-primary">At Scale.</span>
             </h1>
             <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl leading-relaxed">
-              TalentPulse combines AI sourcing, talent intelligence, candidate engagement, screening,
-              recruiter copilots and hiring workflow intelligence into a single platform.
+              Talent intelligence for project-driven, delivery-heavy, and GCC-style teams — connecting delivery readiness, staffing visibility, recruiter productivity, candidate intelligence, project capacity, and skills visibility.
             </p>
             <div className="mt-10 flex flex-wrap gap-3">
               <Link href="/login"><Button size="lg" className="gap-2">Get started <ArrowRight className="h-4 w-4" /></Button></Link>
@@ -214,6 +215,42 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Use Cases */}
+      <section className="py-24">
+        <div className="mx-auto max-w-[1200px] px-6">
+          <FadeIn>
+            <div className="max-w-2xl">
+              <div className="text-sm font-medium text-primary mb-3">Use cases</div>
+              <h2 className="font-display text-4xl md:text-5xl font-bold tracking-tight">
+                Built for how teams actually hire.
+              </h2>
+              <p className="mt-4 text-muted-foreground">
+                TalentPulse is most relevant when talent decisions affect revenue delivery, project execution, or customer commitments.
+              </p>
+            </div>
+          </FadeIn>
+          <Stagger className="mt-16 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              "GCC hiring visibility",
+              "Project staffing readiness",
+              "Bench and capacity planning",
+              "Recruiter productivity",
+              "Candidate pipeline intelligence",
+              "Skills and delivery readiness",
+            ].map((item) => (
+              <StaggerItem key={item}>
+                <div className="rounded-xl bg-card p-6 shadow-sm border border-border/30 hover:border-primary/30 hover:shadow-md transition-all h-full">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div className="font-semibold text-sm">{item}</div>
+                </div>
+              </StaggerItem>
+            ))}
+          </Stagger>
+        </div>
+      </section>
+
       {/* Features */}
       <section id="features" className="py-24 bg-muted/30">
         <div className="mx-auto max-w-[1200px] px-6">
@@ -274,6 +311,40 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* RightSense Ecosystem */}
+      <section className="py-24 bg-muted/30">
+        <div className="mx-auto max-w-[1200px] px-6">
+          <FadeIn>
+            <div className="rounded-2xl bg-card border border-border/40 p-8 md:p-12 shadow-sm max-w-4xl mx-auto text-center">
+              <Layers className="h-10 w-10 text-primary mx-auto mb-4" />
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-2">
+                RightSense ecosystem
+              </p>
+              <h2 className="font-display text-3xl md:text-4xl font-bold tracking-tight text-balance">
+                Part of the RightSense Enterprise Operating Intelligence stack.
+              </h2>
+              <p className="mt-4 text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                TalentPulse sits alongside PulseIQ and WinsProposal in the RightSense platform family, surfacing talent-specific intelligence — capacity, skills, attrition, productivity — that feeds into the broader Enterprise Truth Map and Executive Cockpit.
+              </p>
+            </div>
+          </FadeIn>
+        </div>
+      </section>
+
+      {/* Note */}
+      <section className="py-16">
+        <div className="mx-auto max-w-[1200px] px-6">
+          <FadeIn>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 md:p-8 max-w-4xl mx-auto text-center">
+              <p className="text-base text-amber-800 leading-relaxed">
+                <span className="font-semibold">When is TalentPulse most relevant?</span>{" "}
+                TalentPulse is most relevant when talent decisions affect revenue delivery, project execution, or customer commitments.
+              </p>
+            </div>
+          </FadeIn>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="py-24 bg-primary text-primary-foreground relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,white_0%,transparent_50%)] opacity-10" />
@@ -286,12 +357,21 @@ export default function LandingPage() {
             <p className="mt-4 opacity-90 max-w-xl mx-auto leading-relaxed">
               Join recruitment teams that are hiring faster, better, and at scale with TalentPulse.
             </p>
-            <div className="mt-10">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
               <Link href="/login">
                 <Button size="lg" variant="secondary" className="gap-2">
                   Launch the platform <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
+              <a
+                href="https://www.rightsense.in/48-hour-diagnostic"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button size="lg" variant="secondary" className="gap-2 bg-white/10 text-white border-white/20 hover:bg-white/20">
+                  Discuss Talent Intelligence <ExternalLink className="h-4 w-4" />
+                </Button>
+              </a>
             </div>
           </FadeIn>
         </div>
