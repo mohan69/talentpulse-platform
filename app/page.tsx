@@ -2,20 +2,16 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Brain,
-  Users,
   Sparkles,
   ArrowRight,
-  Building2,
   Target,
   Zap,
   Search,
   FileBarChart,
-  Briefcase,
   KanbanSquare,
   Shield,
   Rocket,
   BarChart3,
-  Clock,
   CheckCircle2,
   Eye,
   ExternalLink,
@@ -24,11 +20,11 @@ import {
 import { FadeIn, Stagger, StaggerItem } from "@/components/ui/animate";
 import { BrandLogo } from "@/components/brand-logo";
 
-const KPIS = [
-  { label: "Faster Candidate Sourcing", value: "3x", icon: Rocket },
-  { label: "Screening Effort Reduction", value: "60%", icon: BarChart3 },
-  { label: "Recruiter Productivity Gain", value: "40%", icon: Zap },
-  { label: "Unified Talent Intelligence", value: "1 Platform", icon: Target },
+const VALUE_PROPS = [
+  { label: "AI-Powered Sourcing", desc: "Multi-platform candidate discovery and match scoring", icon: Rocket },
+  { label: "Automated Screening", desc: "AI evaluates resumes, skills, CTC, and fit in seconds", icon: BarChart3 },
+  { label: "Recruiter Copilot", desc: "AI assistant for summaries, outreach, and interview prep", icon: Zap },
+  { label: "Delivery-Ready Pipeline", desc: "Skills visibility, bench planning, and staffing readiness", icon: Target },
 ];
 
 const BUILT_FOR = [
@@ -97,18 +93,23 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex flex-wrap gap-3">
               <Link href="/login"><Button size="lg" className="gap-2">Get started <ArrowRight className="h-4 w-4" /></Button></Link>
-              <a href="#screenshot"><Button size="lg" variant="outline">See the platform</Button></a>
+              <a href="https://www.rightsense.in/48-hour-diagnostic" target="_blank" rel="noopener noreferrer">
+                <Button size="lg" variant="outline" className="gap-2 border-primary/50 text-primary hover:bg-primary/5">
+                  Discuss Talent Intelligence <ArrowRight className="h-4 w-4" />
+                </Button>
+              </a>
+              <a href="#screenshot"><Button size="lg" variant="ghost">See the platform</Button></a>
             </div>
           </FadeIn>
 
-          {/* KPI Cards */}
+          {/* Value Props */}
           <Stagger className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6">
-            {KPIS.map((s) => (
+            {VALUE_PROPS.map((s) => (
               <StaggerItem key={s.label}>
                 <div className="rounded-xl bg-card p-6 shadow-sm hover:shadow-md transition-shadow border border-border/40">
                   <s.icon className="h-5 w-5 text-primary mb-3" />
-                  <div className="font-display font-bold text-3xl tracking-tight">{s.value}</div>
-                  <div className="text-sm text-muted-foreground mt-1">{s.label}</div>
+                  <div className="font-display font-semibold text-base tracking-tight">{s.label}</div>
+                  <div className="text-sm text-muted-foreground mt-1">{s.desc}</div>
                 </div>
               </StaggerItem>
             ))}
