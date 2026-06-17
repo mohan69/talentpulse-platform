@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PageTitle } from "@/components/workspace/page-title";
 import { WhatsAppClient } from "../../admin/whatsapp/whatsapp-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,13 @@ export default async function RecruiterWhatsApp() {
   if (!session?.user) redirect("/login");
 
   const [messages, templates, integrationActive] = await Promise.all([
-    prisma.whatsAppMessage.findMany({
+    tenantPrisma.whatsAppMessage.findMany({
       include: { candidate: { select: { id: true, name: true, phone: true } }, template: true },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
-    prisma.whatsAppTemplate.findMany({ orderBy: { updatedAt: "desc" } }),
-    prisma.integrationSetting.findUnique({ where: { provider: "WHATSAPP" } }).then((s) => s?.isActive ?? false),
+    tenantPrisma.whatsAppTemplate.findMany({ orderBy: { updatedAt: "desc" } }),
+    tenantPrisma.integrationSetting.findUnique({ where: { provider: "WHATSAPP" } }).then((s) => s?.isActive ?? false),
   ]);
   return (
     <>

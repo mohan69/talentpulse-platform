@@ -33,11 +33,11 @@ export async function GET(req: Request) {
     tenantPrisma.job.groupBy({ by: ["status"], _count: true, where: jobWhere }),
     tenantPrisma.application.groupBy({ by: ["stage"], _count: true, where: appWhere }),
     tenantPrisma.interview.count({ where: appWhere.job ? { application: appWhere } : {} }),
-    prisma.offer.groupBy({ by: ["status"], _count: true, where: appWhere.job ? { application: appWhere } : {} }),
+    tenantPrisma.offer.groupBy({ by: ["status"], _count: true, where: appWhere.job ? { application: appWhere } : {} }),
     tenantPrisma.candidate.count(),
     tenantPrisma.client.count(),
-    prisma.prospect.groupBy({ by: ["status"], _count: true }),
-    prisma.prospect.count(),
+    tenantPrisma.prospect.groupBy({ by: ["status"], _count: true }),
+    tenantPrisma.prospect.count(),
   ]);
 
   const sourceStats = await tenantPrisma.candidate.groupBy({

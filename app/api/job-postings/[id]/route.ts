@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { JobPostingStatus } from "@prisma/client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.expiresAt !== undefined) data.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
   if (body.notes !== undefined) data.notes = body.notes || null;
 
-  const posting = await prisma.jobPosting.update({
+  const posting = await tenantPrisma.jobPosting.update({
     where: { id: params.id },
     data,
     include: { platform: true, postedBy: { select: { id: true, name: true } } },
@@ -44,6 +45,6 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   if (!["ADMIN", "RECRUITER"].includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  await prisma.jobPosting.delete({ where: { id: params.id } });
+  await tenantPrisma.jobPosting.delete({ where: { id: params.id } });
   return NextResponse.json({ success: true });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
   const candidateId = searchParams.get("candidateId");
   const where: any = {};
   if (candidateId) where.candidateId = candidateId;
-  const messages = await prisma.whatsAppMessage.findMany({
+  const messages = await tenantPrisma.whatsAppMessage.findMany({
     where,
     include: { candidate: { select: { id: true, name: true, phone: true } }, template: true },
     orderBy: { createdAt: "desc" },

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PageTitle } from "@/components/workspace/page-title";
 import { RecruiterPlatformsClient } from "./platforms-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function RecruiterPlatformsPage() {
   if (!session?.user) redirect("/login");
   const userId = (session.user as any).id;
 
-  const subscriptions = await prisma.platformSubscription.findMany({
+  const subscriptions = await tenantPrisma.platformSubscription.findMany({
     where: { recruiterId: userId },
     include: { platform: true },
     orderBy: { platform: { name: "asc" } },

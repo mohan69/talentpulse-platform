@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { getCompanyProfile } from "@/lib/company";
+import { tenantPrisma } from "@/lib/repositories";
+import { resolveRecordTenantContext } from "@/lib/tenant/provider-context";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +33,20 @@ export async function POST(req: Request) {
       screeningId,
     });
 
+    const { tenantContext } = screeningId
+      ? await resolveRecordTenantContext("voiceScreening", screeningId)
+      : { tenantContext: null };
+    if (screeningId && !tenantContext) {
+      return new Response(
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Voice screening was not found. Goodbye.</Say><Hangup/></Response>',
+        { headers: { "Content-Type": "text/xml" } }
+      );
+    }
+    const voiceScreeningRepo = tenantContext ? (tenantPrisma.voiceScreening as any).withContext(tenantContext) : tenantPrisma.voiceScreening;
+    const integrationSettingRepo = tenantContext ? (tenantPrisma.integrationSetting as any).withContext(tenantContext) : tenantPrisma.integrationSetting;
+
     // Get ElevenLabs config
-    const elevenLabs = await prisma.integrationSetting.findUnique({
+    const elevenLabs = await integrationSettingRepo.findUnique({
       where: { provider: "ELEVENLABS" },
     });
     if (!elevenLabs || !elevenLabs.isActive) {
@@ -77,7 +90,7 @@ export async function POST(req: Request) {
     let screeningQuestions = "";
     let webhookUrl = "";
     if (screeningId) {
-      const screening = await prisma.voiceScreening.findUnique({
+      const screening = await voiceScreeningRepo.findUnique({
         where: { id: screeningId },
         include: {
           candidate: true,
@@ -126,7 +139,7 @@ export async function POST(req: Request) {
         screeningQuestions = questions.join(" | ");
         
         // Update the screening with the Twilio callSid for accurate callback matching
-        await prisma.voiceScreening.update({
+        await voiceScreeningRepo.update({
           where: { id: screeningId },
           data: { externalCallId: callSid },
         });
@@ -270,7 +283,7 @@ export async function POST(req: Request) {
 
     if (conversationId && screeningId) {
       try {
-        const updated = await prisma.voiceScreening.update({
+        const updated = await voiceScreeningRepo.update({
           where: { id: screeningId },
           data: { conversationId },
         });

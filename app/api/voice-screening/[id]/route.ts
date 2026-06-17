@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const screening = await prisma.voiceScreening.findUnique({
+  const screening = await tenantPrisma.voiceScreening.findUnique({
     where: { id: params.id },
     include: { candidate: true, application: { include: { job: true } } },
   });
@@ -19,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
-  const screening = await prisma.voiceScreening.update({
+  const screening = await tenantPrisma.voiceScreening.update({
     where: { id: params.id },
     data: body,
   });

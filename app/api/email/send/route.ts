@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     const result = await resp.json().catch(() => ({}));
     const success = result?.success !== false;
 
-    await prisma.emailLog.create({
+    await tenantPrisma.emailLog.create({
       data: {
         candidateId: candidateId ?? null,
         senderId: user.id,

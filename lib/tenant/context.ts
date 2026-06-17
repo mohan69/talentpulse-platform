@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-export type TenantEnforcementMode = "observe" | "enforce";
+export type TenantEnforcementMode = "off" | "observe" | "warn" | "enforce";
 
 export type TenantContext = {
   organizationId: string;
@@ -13,16 +13,20 @@ export type TenantContext = {
   userRole: string | null;
   clientId: string | null;
   candidateId: string | null;
+  portalContext?: { type: "client" | "candidate"; id: string };
   permissions: string[];
   enforcementMode: TenantEnforcementMode;
 };
 
+const validModes = new Set<TenantEnforcementMode>(["off", "observe", "warn", "enforce"]);
+const configuredMode = process.env.TENANT_ENFORCEMENT_MODE as TenantEnforcementMode | undefined;
+
 export const tenantEnforcementMode: TenantEnforcementMode =
-  process.env.TENANT_ENFORCEMENT_MODE === "enforce" ? "enforce" : "observe";
+  configuredMode && validModes.has(configuredMode) ? configuredMode : "observe";
 
 function logObserve(message: string, metadata?: Record<string, unknown>) {
-  if (tenantEnforcementMode === "observe") {
-    console.warn(`[tenant-observe] ${message}`, metadata ?? {});
+  if (tenantEnforcementMode === "observe" || tenantEnforcementMode === "warn") {
+    console.warn(`[tenant-${tenantEnforcementMode}] ${message}`, metadata ?? {});
   }
 }
 
@@ -143,7 +147,7 @@ export async function resolveTenantContext(): Promise<TenantContext | null> {
       workspaceId = workspace?.id ?? null;
     }
 
-    return {
+    const context: TenantContext = {
       organizationId,
       workspaceId,
       userId: user.id,
@@ -155,9 +159,16 @@ export async function resolveTenantContext(): Promise<TenantContext | null> {
       permissions: [],
       enforcementMode: tenantEnforcementMode,
     };
+
+    if (user.role === "CLIENT" && user.clientId) {
+      context.portalContext = { type: "client", id: user.clientId };
+    } else if (user.role === "CANDIDATE" && user.candidateId) {
+      context.portalContext = { type: "candidate", id: user.candidateId };
+    }
+
+    return context;
   } catch (error) {
     logObserve("Tenant context resolution failed", { error: String(error) });
     return resolveDefaultTenant();
   }
 }
-

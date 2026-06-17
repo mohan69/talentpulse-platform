@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await requireRole(["ADMIN"]);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const settings = await prisma.integrationSetting.findMany({ orderBy: { provider: "asc" } });
+  const settings = await tenantPrisma.integrationSetting.findMany({ orderBy: { provider: "asc" } });
   // Mask sensitive fields
   const masked = settings.map((s: any) => {
     const cfg = s.config as Record<string, any>;
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   const { provider, config, isActive } = body ?? {};
   if (!provider || !config) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-  const setting = await prisma.integrationSetting.upsert({
+  const setting = await tenantPrisma.integrationSetting.upsert({
     where: { provider },
     create: { provider, config, isActive: isActive ?? false },
     update: { config, isActive: isActive ?? undefined, updatedAt: new Date() },

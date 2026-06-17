@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
   const user = await requireRole(["ADMIN"]);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { provider } = await req.json();
-  const setting = await prisma.integrationSetting.findUnique({ where: { provider } });
+  const setting = await tenantPrisma.integrationSetting.findUnique({ where: { provider } });
   if (!setting) return NextResponse.json({ success: false, error: "Integration not configured. Save your credentials first." });
 
   const cfg = (setting.config as any) || {};
@@ -120,7 +121,7 @@ export async function POST(req: Request) {
       result = { success: true, message: "Configuration saved successfully." };
   }
 
-  await prisma.integrationSetting.update({
+  await tenantPrisma.integrationSetting.update({
     where: { provider },
     data: { lastTested: new Date() },
   });

@@ -30,6 +30,8 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
+          organizationId: user.defaultOrganizationId,
+          workspaceId: user.defaultWorkspaceId,
           clientId: user.clientId,
           candidateId: user.candidateId,
         } as any;
@@ -41,8 +43,32 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;
+        token.organizationId = (user as any).organizationId;
+        token.workspaceId = (user as any).workspaceId;
         token.clientId = (user as any).clientId;
         token.candidateId = (user as any).candidateId;
+      }
+      if (token.id && !token.organizationId) {
+        const membership = await prisma.organizationMembership.findFirst({
+          where: { userId: token.id as string, status: "ACTIVE", organization: { status: "ACTIVE" } },
+          include: { organization: { select: { id: true } } },
+          orderBy: { joinedAt: "asc" },
+        });
+        if (membership) {
+          token.organizationId = membership.organizationId;
+          const workspaceMembership = await prisma.workspaceMembership.findFirst({
+            where: {
+              userId: token.id as string,
+              organizationId: membership.organizationId,
+              status: "ACTIVE",
+              workspace: { status: "ACTIVE" },
+            },
+            orderBy: { createdAt: "asc" },
+          });
+          token.workspaceId = workspaceMembership?.workspaceId ?? null;
+        } else {
+          console.warn(`[tenant-auth] User ${token.id} has no active organization membership`);
+        }
       }
       return token;
     },
@@ -50,6 +76,8 @@ export const authOptions: NextAuthOptions = {
       if (session?.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).organizationId = token.organizationId;
+        (session.user as any).workspaceId = token.workspaceId;
         (session.user as any).clientId = token.clientId;
         (session.user as any).candidateId = token.candidateId;
       }

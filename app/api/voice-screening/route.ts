@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
   const where: any = {};
   if (candidateId) where.candidateId = candidateId;
   if (applicationId) where.applicationId = applicationId;
-  const screenings = await prisma.voiceScreening.findMany({
+  const screenings = await tenantPrisma.voiceScreening.findMany({
     where,
     include: { candidate: { select: { id: true, name: true, phone: true } }, application: { include: { job: { select: { id: true, title: true } } } } },
     orderBy: { createdAt: "desc" },
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Check if ElevenLabs integration is configured
-  const elevenLabs = await prisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } });
+  const elevenLabs = await tenantPrisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } });
   if (!elevenLabs || !elevenLabs.isActive) {
     return NextResponse.json({ error: "Voice AI not configured. Please set up ElevenLabs in Admin Settings → Integrations." }, { status: 400 });
   }
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const screening = await prisma.voiceScreening.create({
+  const screening = await tenantPrisma.voiceScreening.create({
     data: {
       applicationId,
       candidateId,
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   const agentPhoneNumberId = cfg.phoneNumberId;
 
   if (!apiKey || !agentId || !agentPhoneNumberId) {
-    await prisma.voiceScreening.update({
+    await tenantPrisma.voiceScreening.update({
       where: { id: screening.id },
       data: { callStatus: "FAILED", aiSummary: "Missing ElevenLabs credentials (apiKey / agentId / phoneNumberId)." },
     });
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     const twilioFromNumber = cfg.twilioFromNumber || process.env.TWILIO_FROM_NUMBER || "";
 
     if (!twilioAccountSid || !twilioAuthToken || !twilioFromNumber) {
-      await prisma.voiceScreening.update({
+      await tenantPrisma.voiceScreening.update({
         where: { id: screening.id },
         data: { callStatus: "FAILED", aiSummary: "Missing Twilio credentials (twilioAccountSid / twilioAuthToken / twilioFromNumber) in integration settings." },
       });
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
 
     if (!twilioRes.ok) {
       console.error("[VoiceScreening] Twilio call failed:", twilioJson);
-      await prisma.voiceScreening.update({
+      await tenantPrisma.voiceScreening.update({
         where: { id: screening.id },
         data: { callStatus: "FAILED", aiSummary: `Twilio error: ${twilioJson?.message || JSON.stringify(twilioJson).slice(0, 500)}` },
       });
@@ -145,7 +146,7 @@ export async function POST(req: Request) {
     const callSid = twilioJson?.sid || null;
     console.log("[VoiceScreening] Twilio call initiated successfully:", { callSid });
 
-    await prisma.voiceScreening.update({
+    await tenantPrisma.voiceScreening.update({
       where: { id: screening.id },
       data: {
         callStatus: "RINGING",
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ...screening, callStatus: "RINGING", twilio: { callSid } });
   } catch (e: any) {
     console.error("[VoiceScreening] Twilio call exception:", e);
-    await prisma.voiceScreening.update({
+    await tenantPrisma.voiceScreening.update({
       where: { id: screening.id },
       data: { callStatus: "FAILED", aiSummary: e?.message || "Unknown error" },
     });

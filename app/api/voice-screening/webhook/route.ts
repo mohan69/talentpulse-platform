@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { getCompanyProfile } from "@/lib/company";
+import { tenantPrisma } from "@/lib/repositories";
+import { resolveRecordTenantContext } from "@/lib/tenant/provider-context";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "screeningId is required" }, { status: 400 });
     }
 
-    const screening = await prisma.voiceScreening.findUnique({
+    const { tenantContext } = await resolveRecordTenantContext("voiceScreening", screeningId);
+    if (!tenantContext) {
+      return NextResponse.json({ error: "Screening not found" }, { status: 404 });
+    }
+    const voiceScreeningRepo = (tenantPrisma.voiceScreening as any).withContext(tenantContext);
+
+    const screening = await voiceScreeningRepo.findUnique({
       where: { id: screeningId },
       include: {
         candidate: true,
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
 
     // Mark call as in progress
     if (screening.callStatus === "QUEUED") {
-      await prisma.voiceScreening.update({
+      await voiceScreeningRepo.update({
         where: { id: screeningId },
         data: { callStatus: "IN_PROGRESS", startedAt: new Date() },
       });

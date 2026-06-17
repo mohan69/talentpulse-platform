@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
   if (user.role === "RECRUITER") where.initiatedById = user.id;
 
   try {
-    const screenings = await prisma.voiceScreening.findMany({
+    const screenings = await tenantPrisma.voiceScreening.findMany({
       where,
       include: {
         candidate: { select: { name: true, phone: true } },

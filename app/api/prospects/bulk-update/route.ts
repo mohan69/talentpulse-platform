@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
 
   if (action === "delete") {
     if (user.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
-    const result = await prisma.prospect.deleteMany({ where: { id: { in: prospectIds } } });
+    const result = await tenantPrisma.prospect.deleteMany({ where: { id: { in: prospectIds } } });
     return NextResponse.json({ deleted: result.count });
   }
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   if (ownerId !== undefined) data.ownerId = ownerId || null;
   if (tags) data.tags = tags;
 
-  const result = await prisma.prospect.updateMany({
+  const result = await tenantPrisma.prospect.updateMany({
     where: { id: { in: prospectIds } },
     data,
   });

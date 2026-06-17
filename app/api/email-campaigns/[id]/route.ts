@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const campaign = await prisma.emailCampaign.findUnique({
+  const campaign = await tenantPrisma.emailCampaign.findUnique({
     where: { id: params.id },
     include: { recipients: true },
   });
@@ -18,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await prisma.emailCampaign.delete({ where: { id: params.id } });
+  await tenantPrisma.emailCampaign.delete({ where: { id: params.id } });
   return NextResponse.json({ success: true });
 }
 
@@ -26,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
-  const campaign = await prisma.emailCampaign.update({
+  const campaign = await tenantPrisma.emailCampaign.update({
     where: { id: params.id },
     data: {
       name: body.name,

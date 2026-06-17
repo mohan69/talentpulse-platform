@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    await prisma.naukriImport.delete({ where: { id: params.id } });
+    await tenantPrisma.naukriImport.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ error: "Import not found" }, { status: 404 });
@@ -34,7 +35,7 @@ export async function PATCH(
       return NextResponse.json({ error: "candidateId and status required" }, { status: 400 });
     }
 
-    const updated = await prisma.naukriCandidate.update({
+    const updated = await tenantPrisma.naukriCandidate.update({
       where: { id: candidateId },
       data: { status },
       include: { matchedJob: { select: { id: true, title: true, client: { select: { name: true } } } } },

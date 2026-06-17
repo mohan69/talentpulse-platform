@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "screeningId is required" }, { status: 400 });
   }
 
-  const screening = await prisma.voiceScreening.findUnique({
+  const screening = await tenantPrisma.voiceScreening.findUnique({
     where: { id: screeningId },
   });
   if (!screening) {
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   }
 
   // Get ElevenLabs API key
-  const elevenLabs = await prisma.integrationSetting.findUnique({
+  const elevenLabs = await tenantPrisma.integrationSetting.findUnique({
     where: { provider: "ELEVENLABS" },
   });
   if (!elevenLabs) {
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
     if (callDurationSecs) updateData.callDuration = Math.round(callDurationSecs);
 
     if (Object.keys(updateData).length > 0) {
-      const updated = await prisma.voiceScreening.update({
+      const updated = await tenantPrisma.voiceScreening.update({
         where: { id: screeningId },
         data: updateData,
       });

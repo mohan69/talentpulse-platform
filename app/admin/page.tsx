@@ -14,7 +14,7 @@ export default async function AdminDashboard() {
   const [openJobs, totalCandidates, totalProspects, activeApps, scheduledInterviews, recentApps, recentActivity] = await Promise.all([
     tenantPrisma.job.count({ where: { status: "OPEN" } }),
     tenantPrisma.candidate.count(),
-    prisma.prospect.count({ where: { status: { not: "CONVERTED" } } }),
+    tenantPrisma.prospect.count({ where: { status: { not: "CONVERTED" } } }),
     tenantPrisma.application.count({ where: { stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
     tenantPrisma.interview.count({ where: { status: "SCHEDULED" } }),
     tenantPrisma.application.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { candidate: true, job: true } }),

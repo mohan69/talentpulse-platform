@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const elevenLabs = await prisma.integrationSetting.findUnique({
+  const elevenLabs = await tenantPrisma.integrationSetting.findUnique({
     where: { provider: "ELEVENLABS" },
   });
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     // Create import record
-    const importRecord = await prisma.naukriImport.create({
+    const importRecord = await tenantPrisma.naukriImport.create({
       data: { userId: user.id, rawData, searchQuery: searchQuery || null, status: "PARSING" },
     });
 
@@ -64,7 +65,7 @@ Do NOT invent data. If a field is not available, set it to null.`;
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      await prisma.naukriImport.update({ where: { id: importRecord.id }, data: { status: "FAILED" } });
+      await tenantPrisma.naukriImport.update({ where: { id: importRecord.id }, data: { status: "FAILED" } });
       return NextResponse.json({ error: `AI parsing failed: ${resp.status}. ${errText.slice(0, 200)}` }, { status: 500 });
     }
 
@@ -80,14 +81,14 @@ Do NOT invent data. If a field is not available, set it to null.`;
 
     const candidates = parsed.candidates || [];
     if (candidates.length === 0) {
-      await prisma.naukriImport.update({ where: { id: importRecord.id }, data: { status: "FAILED" } });
+      await tenantPrisma.naukriImport.update({ where: { id: importRecord.id }, data: { status: "FAILED" } });
       return NextResponse.json({ error: parsed.error || "Could not parse any candidates from the provided text" }, { status: 400 });
     }
 
     // Save parsed candidates
     const created = await Promise.all(
       candidates.map((c: any) =>
-        prisma.naukriCandidate.create({
+        tenantPrisma.naukriCandidate.create({
           data: {
             importId: importRecord.id,
             name: c.name || "Unknown",
@@ -109,13 +110,13 @@ Do NOT invent data. If a field is not available, set it to null.`;
       )
     );
 
-    await prisma.naukriImport.update({
+    await tenantPrisma.naukriImport.update({
       where: { id: importRecord.id },
       data: { status: "PARSED", candidateCount: created.length },
     });
 
     // Return full import with candidates
-    const fullImport = await prisma.naukriImport.findUnique({
+    const fullImport = await tenantPrisma.naukriImport.findUnique({
       where: { id: importRecord.id },
       include: {
         candidates: { orderBy: { createdAt: "asc" } },

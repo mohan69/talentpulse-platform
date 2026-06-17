@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { getCompanyProfile } from "@/lib/company";
+import { tenantPrisma } from "@/lib/repositories";
+import { resolveRecordTenantContext } from "@/lib/tenant/provider-context";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +30,18 @@ export async function POST(req: Request) {
       );
     }
 
+    const { tenantContext } = await resolveRecordTenantContext("voiceScreening", screeningId);
+    if (!tenantContext) {
+      return NextResponse.json(
+        { success: false, message: "Screening not found" },
+        { status: 404 }
+      );
+    }
+    const voiceScreeningRepo = (tenantPrisma.voiceScreening as any).withContext(tenantContext);
+    const emailLogRepo = (tenantPrisma.emailLog as any).withContext(tenantContext);
+
     // Fetch screening with full candidate, job, and client details
-    const screening = await prisma.voiceScreening.findUnique({
+    const screening = await voiceScreeningRepo.findUnique({
       where: { id: screeningId },
       include: {
         candidate: true,
@@ -160,7 +171,7 @@ export async function POST(req: Request) {
     const success = result?.success !== false;
 
     // Log the email
-    await prisma.emailLog.create({
+    await emailLogRepo.create({
       data: {
         candidateId: candidate.id,
         subject,

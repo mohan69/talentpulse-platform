@@ -39,18 +39,18 @@ export async function GET(req: Request) {
   }
 
   const [prospects, total] = await Promise.all([
-    prisma.prospect.findMany({
+    tenantPrisma.prospect.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
       include: { owner: { select: { id: true, name: true } } },
     }),
-    prisma.prospect.count({ where }),
+    tenantPrisma.prospect.count({ where }),
   ]);
 
   // Status counts for filters
-  const statusCounts = await prisma.prospect.groupBy({
+  const statusCounts = await tenantPrisma.prospect.groupBy({
     by: ["status"],
     _count: true,
     where: user.role === "RECRUITER" ? { ownerId: user.id } : {},
@@ -81,14 +81,14 @@ export async function POST(req: Request) {
 
   // Check for duplicate by email if provided
   if (email) {
-    const existing = await prisma.prospect.findFirst({ where: { email } });
+    const existing = await tenantPrisma.prospect.findFirst({ where: { email } });
     if (existing) return NextResponse.json({ error: "A prospect with this email already exists", existingId: existing.id }, { status: 409 });
     // Also check if already a candidate
     const existingCandidate = await tenantPrisma.candidate.findFirst({ where: { email } });
     if (existingCandidate) return NextResponse.json({ error: "This person is already a candidate", candidateId: existingCandidate.id }, { status: 409 });
   }
 
-  const prospect = await prisma.prospect.create({
+  const prospect = await tenantPrisma.prospect.create({
     data: {
       name: name.trim(),
       email: email?.trim() || null,

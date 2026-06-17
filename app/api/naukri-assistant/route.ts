@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function GET() {
   const user = await requireRole(["ADMIN", "RECRUITER"]);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const imports = await prisma.naukriImport.findMany({
+  const imports = await tenantPrisma.naukriImport.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
     include: {

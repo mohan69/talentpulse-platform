@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.validUntil !== undefined) data.validUntil = body.validUntil ? new Date(body.validUntil) : null;
   if (body.isActive !== undefined) data.isActive = body.isActive;
   if (body.notes !== undefined) data.notes = body.notes || null;
-  const sub = await prisma.platformSubscription.update({
+  const sub = await tenantPrisma.platformSubscription.update({
     where: { id: params.id },
     data,
     include: { platform: true, recruiter: { select: { id: true, name: true, email: true } } },
@@ -32,6 +33,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const user = await requireRole(["ADMIN"]);
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await prisma.platformSubscription.delete({ where: { id: params.id } });
+  await tenantPrisma.platformSubscription.delete({ where: { id: params.id } });
   return NextResponse.json({ success: true });
 }

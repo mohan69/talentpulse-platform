@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminCalendar() {
   const [googleActive, outlookActive, upcomingInterviews] = await Promise.all([
-    prisma.integrationSetting.findUnique({ where: { provider: "GOOGLE_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
-    prisma.integrationSetting.findUnique({ where: { provider: "OUTLOOK_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
+    tenantPrisma.integrationSetting.findUnique({ where: { provider: "GOOGLE_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
+    tenantPrisma.integrationSetting.findUnique({ where: { provider: "OUTLOOK_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
     tenantPrisma.interview.findMany({
       where: { scheduledAt: { gte: new Date() } },
       include: {

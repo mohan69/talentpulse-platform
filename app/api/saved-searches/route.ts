@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const searches = await prisma.savedSearch.findMany({
+  const searches = await tenantPrisma.savedSearch.findMany({
     where: { userId: (session.user as any).id },
     orderBy: { updatedAt: "desc" },
     take: 20,
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
-  const saved = await prisma.savedSearch.create({
+  const saved = await tenantPrisma.savedSearch.create({
     data: {
       userId: (session.user as any).id,
       name: name.trim(),
@@ -61,7 +62,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "ID is required" }, { status: 400 });
   }
 
-  await prisma.savedSearch.deleteMany({
+  await tenantPrisma.savedSearch.deleteMany({
     where: {
       id,
       userId: (session.user as any).id,

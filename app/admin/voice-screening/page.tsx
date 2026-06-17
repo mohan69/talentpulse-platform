@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminVoiceScreening() {
   const [screenings, integrationActive, applications] = await Promise.all([
-    prisma.voiceScreening.findMany({
+    tenantPrisma.voiceScreening.findMany({
       include: {
         candidate: { select: { id: true, name: true, phone: true } },
         application: { include: { job: { select: { id: true, title: true, client: { select: { name: true } } } } } },
@@ -16,7 +16,7 @@ export default async function AdminVoiceScreening() {
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } }).then((s) => s?.isActive ?? false),
+    tenantPrisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } }).then((s) => s?.isActive ?? false),
     tenantPrisma.application.findMany({
       where: { stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } },
       include: {

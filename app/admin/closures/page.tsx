@@ -7,7 +7,7 @@ import { tenantPrisma } from "@/lib/repositories";
 export const dynamic = "force-dynamic";
 
 export default async function AdminClosures() {
-  const offers = await prisma.offer.findMany({
+  const offers = await tenantPrisma.offer.findMany({
     orderBy: { createdAt: "desc" },
     include: {
       candidate: { select: { id: true, name: true } },

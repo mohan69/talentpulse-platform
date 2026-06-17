@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole, requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const subs = await prisma.platformSubscription.findMany({
+  const subs = await tenantPrisma.platformSubscription.findMany({
     where,
     include: { platform: true, recruiter: { select: { id: true, name: true, email: true } } },
     orderBy: { createdAt: "desc" },
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   const { platformId, recruiterId, username, password, planName, profileLimit, jobPostLimit, monthlyCost, validFrom, validUntil, notes } = body;
   if (!platformId || !recruiterId) return NextResponse.json({ error: "Platform and Recruiter are required" }, { status: 400 });
   try {
-    const sub = await prisma.platformSubscription.create({
+    const sub = await tenantPrisma.platformSubscription.create({
       data: {
         platformId,
         recruiterId,

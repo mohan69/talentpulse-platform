@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No candidates selected" }, { status: 400 });
     }
 
-    const naukriCandidates = await prisma.naukriCandidate.findMany({
+    const naukriCandidates = await tenantPrisma.naukriCandidate.findMany({
       where: { id: { in: naukriCandidateIds }, importedToPipeline: false },
     });
 
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
         }
 
         // Mark as imported
-        await prisma.naukriCandidate.update({
+        await tenantPrisma.naukriCandidate.update({
           where: { id: nc.id },
           data: {
             importedToPipeline: true,
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         console.error(`Import error for ${nc.name}:`, err);
         if (err.code === "P2002") {
           // Duplicate - mark appropriately
-          await prisma.naukriCandidate.update({
+          await tenantPrisma.naukriCandidate.update({
             where: { id: nc.id },
             data: { status: "DUPLICATE" },
           });

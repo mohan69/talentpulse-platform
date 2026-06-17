@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const app = await tenantPrisma.application.findUnique({ where: { id: body.applicationId } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
-  const offer = await prisma.offer.create({
+  const offer = await tenantPrisma.offer.create({
     data: {
       applicationId: body.applicationId,
       candidateId: app.candidateId,

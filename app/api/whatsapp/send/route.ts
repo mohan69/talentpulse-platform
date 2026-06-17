@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const wa = await prisma.integrationSetting.findUnique({ where: { provider: "WHATSAPP" } });
+  const wa = await tenantPrisma.integrationSetting.findUnique({ where: { provider: "WHATSAPP" } });
   if (!wa || !wa.isActive) {
     return NextResponse.json({ error: "WhatsApp Business not configured. Please set up in Admin Settings → Integrations." }, { status: 400 });
   }
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Phone number and message body are required" }, { status: 400 });
   }
 
-  const message = await prisma.whatsAppMessage.create({
+  const message = await tenantPrisma.whatsAppMessage.create({
     data: {
       candidateId: candidateId || null,
       phoneNumber,

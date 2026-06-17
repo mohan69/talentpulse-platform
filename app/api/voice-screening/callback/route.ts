@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { VoiceCallStatus } from "@prisma/client";
+import { tenantPrisma } from "@/lib/repositories";
+import { resolveRecordTenantContext, resolveRecordTenantContextByWhere } from "@/lib/tenant/provider-context";
+import type { TenantContext } from "@/lib/tenant/context";
 
 export const dynamic = "force-dynamic";
 
@@ -110,14 +112,17 @@ async function fetchElevenLabsConversation(
     conversationId: string | null;
     phoneNumber: string;
   },
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  tenantContext?: TenantContext | null,
 ) {
+  const voiceScreeningRepo = tenantContext ? (tenantPrisma.voiceScreening as any).withContext(tenantContext) : tenantPrisma.voiceScreening;
+  const integrationSettingRepo = tenantContext ? (tenantPrisma.integrationSetting as any).withContext(tenantContext) : tenantPrisma.integrationSetting;
   let conversationId = screening.conversationId;
   
   // If no conversationId is set, try to find it from ElevenLabs
   if (!conversationId) {
     console.log("[VoiceScreening] conversationId not set, attempting to find from ElevenLabs...");
-    const elevenLabs = await prisma.integrationSetting.findUnique({
+    const elevenLabs = await integrationSettingRepo.findUnique({
       where: { provider: "ELEVENLABS" },
     });
     if (elevenLabs) {
@@ -128,7 +133,7 @@ async function fetchElevenLabsConversation(
         conversationId = await findConversationIdFromElevenLabs(screening.phoneNumber, apiKey, agentId);
         if (conversationId) {
           // Store it for future use
-          await prisma.voiceScreening.update({
+          await voiceScreeningRepo.update({
             where: { id: screening.id },
             data: { conversationId },
           }).catch((e: any) => console.error("[VoiceScreening] Failed to store found conversationId:", e));
@@ -148,7 +153,7 @@ async function fetchElevenLabsConversation(
 
   try {
     // Get ElevenLabs API key
-    const elevenLabs = await prisma.integrationSetting.findUnique({
+    const elevenLabs = await integrationSettingRepo.findUnique({
       where: { provider: "ELEVENLABS" },
     });
     if (!elevenLabs) return;
@@ -244,7 +249,7 @@ async function fetchElevenLabsConversation(
     if (callDurationSecs) updateData.callDuration = Math.round(callDurationSecs);
 
     if (Object.keys(updateData).length > 0) {
-      await prisma.voiceScreening.update({
+      await voiceScreeningRepo.update({
         where: { id: screening.id },
         data: updateData,
       });
@@ -288,22 +293,24 @@ export async function POST(req: Request) {
           canceled: VoiceCallStatus.CANCELLED,
         };
 
-        // Find screening by externalCallId (Twilio CallSid)
-        let screening = twilioCallSid
-          ? await prisma.voiceScreening.findFirst({
-              where: { externalCallId: twilioCallSid },
-            })
+        // Find screening by externalCallId (Twilio CallSid), then derive tenant from the record.
+        let resolved = twilioCallSid
+          ? await resolveRecordTenantContextByWhere("voiceScreening", { externalCallId: twilioCallSid })
+          : { record: null, tenantContext: null };
+        let screening = resolved.record && resolved.tenantContext
+          ? await (tenantPrisma.voiceScreening as any).withContext(resolved.tenantContext).findUnique({ where: { id: resolved.record.id } })
           : null;
         // Fallback to most recent RINGING (legacy)
         if (!screening) {
-          screening = await prisma.voiceScreening.findFirst({
-            where: { callStatus: "RINGING" },
-            orderBy: { startedAt: "desc" },
-          });
+          resolved = await resolveRecordTenantContextByWhere("voiceScreening", { callStatus: "RINGING" });
+          screening = resolved.record && resolved.tenantContext
+            ? await (tenantPrisma.voiceScreening as any).withContext(resolved.tenantContext).findUnique({ where: { id: resolved.record.id } })
+            : null;
         }
 
-        if (screening) {
-          await prisma.voiceScreening.update({
+        if (screening && resolved.tenantContext) {
+          const voiceScreeningRepo = (tenantPrisma.voiceScreening as any).withContext(resolved.tenantContext);
+          await voiceScreeningRepo.update({
             where: { id: screening.id },
             data: {
               callStatus: statusMap[twilioStatus] || VoiceCallStatus.COMPLETED,
@@ -318,7 +325,7 @@ export async function POST(req: Request) {
           // This may be too early; UI also has a "Fetch Transcript" button for manual retry
           if (twilioStatus === "completed") {
             // Don't await — fire and forget so the callback response isn't delayed
-            fetchElevenLabsConversation(screening).catch((e: any) =>
+            fetchElevenLabsConversation(screening, undefined, resolved.tenantContext).catch((e: any) =>
               console.error("[VoiceScreening Callback] Transcript fetch error:", e.message)
             );
           }
@@ -347,12 +354,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "screeningId is required" }, { status: 400 });
     }
 
-    const existing = await prisma.voiceScreening.findUnique({ where: { id: screeningId } });
+    const { tenantContext } = await resolveRecordTenantContext("voiceScreening", screeningId);
+    if (!tenantContext) {
+      return NextResponse.json({ error: "Screening not found" }, { status: 404 });
+    }
+    const voiceScreeningRepo = (tenantPrisma.voiceScreening as any).withContext(tenantContext);
+
+    const existing = await voiceScreeningRepo.findUnique({ where: { id: screeningId } });
     if (!existing) {
       return NextResponse.json({ error: "Screening not found" }, { status: 404 });
     }
 
-    const updated = await prisma.voiceScreening.update({
+    const updated = await voiceScreeningRepo.update({
       where: { id: screeningId },
       data: {
         transcript: transcript || null,

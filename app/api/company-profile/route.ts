@@ -4,14 +4,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { tenantPrisma } from "@/lib/repositories";
 
 const DEFAULT_ID = "default";
 
 export async function GET() {
   try {
-    let profile = await prisma.companyProfile.findUnique({ where: { id: DEFAULT_ID } });
+    let profile = await tenantPrisma.companyProfile.findUnique({ where: { id: DEFAULT_ID } });
     if (!profile) {
-      profile = await prisma.companyProfile.create({
+      profile = await tenantPrisma.companyProfile.create({
         data: {
           id: DEFAULT_ID,
           name: "CareerPaths India",
@@ -52,7 +53,7 @@ export async function PUT(req: NextRequest) {
       branchAddress, branchCity, branchState, branchCountry,
     } = body;
 
-    const profile = await prisma.companyProfile.upsert({
+    const profile = await tenantPrisma.companyProfile.upsert({
       where: { id: DEFAULT_ID },
       update: {
         name, brandName, website, email, phone, tagline,

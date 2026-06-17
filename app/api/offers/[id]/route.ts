@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.feePercent !== undefined) data.feePercent = body.feePercent ? Number(body.feePercent) : null;
   if (body.feeAmount !== undefined) data.feeAmount = body.feeAmount ? Number(body.feeAmount) : null;
   if (body.paymentStatus !== undefined) data.paymentStatus = body.paymentStatus || null;
-  const updated = await prisma.offer.update({ where: { id: params.id }, data });
+  const updated = await tenantPrisma.offer.update({ where: { id: params.id }, data });
   if (body.status === "ACCEPTED") {
     await tenantPrisma.application.update({ where: { id: updated.applicationId }, data: { stage: "OFFER_ACCEPTED" } });
   }

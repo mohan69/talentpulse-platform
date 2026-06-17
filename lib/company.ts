@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { tenantPrisma } from "@/lib/repositories";
 
 /**
  * CareerPaths India — Hardcoded fallback.
@@ -30,7 +31,7 @@ export const COMPANY = {
  */
 export async function getCompanyProfile() {
   try {
-    const row = await prisma.companyProfile.findUnique({ where: { id: "default" } });
+    const row = await tenantPrisma.companyProfile.findUnique({ where: { id: "default" } });
     if (!row) return COMPANY;
     return {
       name: row.name || COMPANY.name,

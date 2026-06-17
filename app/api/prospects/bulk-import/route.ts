@@ -130,7 +130,7 @@ export async function POST(req: Request) {
   // Collect emails for duplicate check
   const emails = rows.map((r) => r.email?.toLowerCase()).filter(Boolean) as string[];
   const existingProspects = emails.length > 0
-    ? await prisma.prospect.findMany({ where: { email: { in: emails } }, select: { email: true } })
+    ? await tenantPrisma.prospect.findMany({ where: { email: { in: emails } }, select: { email: true } })
     : [];
   const existingCandidates = emails.length > 0
     ? await tenantPrisma.candidate.findMany({ where: { email: { in: emails } }, select: { email: true } })
@@ -180,7 +180,7 @@ export async function POST(req: Request) {
 
   // Batch create
   if (createData.length > 0) {
-    const result = await prisma.prospect.createMany({ data: createData });
+    const result = await tenantPrisma.prospect.createMany({ data: createData });
     imported = result.count;
   }
 

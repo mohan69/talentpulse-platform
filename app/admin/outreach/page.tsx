@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminOutreach() {
   const [campaigns, candidates] = await Promise.all([
-    prisma.emailCampaign.findMany({
+    tenantPrisma.emailCampaign.findMany({
       include: { _count: { select: { recipients: true } } },
       orderBy: { createdAt: "desc" },
       take: 50,

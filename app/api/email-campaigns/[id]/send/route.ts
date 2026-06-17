@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,14 +32,14 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const campaign = await prisma.emailCampaign.findUnique({
+  const campaign = await tenantPrisma.emailCampaign.findUnique({
     where: { id: params.id },
     include: { recipients: { where: { status: "pending" } } },
   });
   if (!campaign) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (campaign.recipients.length === 0) return NextResponse.json({ error: "No pending recipients" }, { status: 400 });
 
-  await prisma.emailCampaign.update({ where: { id: params.id }, data: { status: "SENDING" } });
+  await tenantPrisma.emailCampaign.update({ where: { id: params.id }, data: { status: "SENDING" } });
 
   let sentCount = 0;
   let failedCount = 0;
@@ -46,18 +47,18 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   for (const r of campaign.recipients) {
     try {
       const ok = await sendOneEmail({ email: r.email, name: r.name }, campaign.subject, campaign.body);
-      await prisma.campaignRecipient.update({
+      await tenantPrisma.campaignRecipient.update({
         where: { id: r.id },
         data: { status: ok ? "sent" : "failed", sentAt: ok ? new Date() : undefined },
       });
       if (ok) sentCount++; else failedCount++;
     } catch {
-      await prisma.campaignRecipient.update({ where: { id: r.id }, data: { status: "failed" } });
+      await tenantPrisma.campaignRecipient.update({ where: { id: r.id }, data: { status: "failed" } });
       failedCount++;
     }
   }
 
-  await prisma.emailCampaign.update({
+  await tenantPrisma.emailCampaign.update({
     where: { id: params.id },
     data: { status: "SENT", sentAt: new Date(), sentCount: { increment: sentCount }, failedCount: { increment: failedCount } },
   });

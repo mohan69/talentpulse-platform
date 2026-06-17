@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const prospect = await prisma.prospect.findUnique({
+  const prospect = await tenantPrisma.prospect.findUnique({
     where: { id: params.id },
     include: {
       owner: { select: { id: true, name: true, email: true } },
@@ -55,7 +56,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (statusNote !== undefined) data.statusNote = statusNote?.trim() || null;
   if (ownerId !== undefined) data.ownerId = ownerId || null;
 
-  const prospect = await prisma.prospect.update({ where: { id: params.id }, data });
+  const prospect = await tenantPrisma.prospect.update({ where: { id: params.id }, data });
   if (status) {
     await logActivity({ userId: user.id, entityType: "prospect", entityId: prospect.id, action: "status_changed", metadata: { status, name: prospect.name } });
   }
@@ -68,6 +69,6 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (user.role !== "ADMIN")
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
-  await prisma.prospect.delete({ where: { id: params.id } });
+  await tenantPrisma.prospect.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
 }

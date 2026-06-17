@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     try {
       const activePlatforms = await prisma.recruitingPlatform.findMany({ where: { isActive: true }, select: { id: true } });
       if (activePlatforms.length > 0) {
-        await prisma.jobPosting.createMany({
+        await tenantPrisma.jobPosting.createMany({
           data: activePlatforms.map((p) => ({ jobId: job.id, platformId: p.id, status: "PENDING" as const, autoPosted: true })),
           skipDuplicates: true,
         });

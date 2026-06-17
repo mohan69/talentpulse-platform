@@ -18,7 +18,7 @@ export default async function RecruiterDashboard() {
     tenantPrisma.job.count({ where: { recruiterId: uid, status: "OPEN" } }),
     tenantPrisma.application.count({ where: { job: { recruiterId: uid }, stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
     tenantPrisma.interview.count({ where: { application: { job: { recruiterId: uid } }, status: "SCHEDULED" } }),
-    prisma.prospect.count({ where: { ownerId: uid, status: { not: "CONVERTED" } } }),
+    tenantPrisma.prospect.count({ where: { ownerId: uid, status: { not: "CONVERTED" } } }),
     tenantPrisma.application.findMany({ where: { job: { recruiterId: uid } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
   ]);
 

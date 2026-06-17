@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     // Fetch candidates to match
     const where: any = { importId, status: { in: ["NEW", "MATCHED"] } };
     if (candidateIds?.length) where.id = { in: candidateIds };
-    const naukriCandidates = await prisma.naukriCandidate.findMany({ where });
+    const naukriCandidates = await tenantPrisma.naukriCandidate.findMany({ where });
 
     if (naukriCandidates.length === 0) {
       return NextResponse.json({ error: "No candidates to match" }, { status: 400 });
@@ -111,7 +111,7 @@ Respond ONLY with raw JSON:
     for (const match of matches) {
       if (!match.candidateId) continue;
       const jobId = validJobIds.has(match.matchedJobId) ? match.matchedJobId : null;
-      await prisma.naukriCandidate.update({
+      await tenantPrisma.naukriCandidate.update({
         where: { id: match.candidateId },
         data: {
           matchedJobId: jobId,
@@ -124,7 +124,7 @@ Respond ONLY with raw JSON:
     }
 
     // Refetch updated candidates
-    const updated = await prisma.naukriCandidate.findMany({
+    const updated = await tenantPrisma.naukriCandidate.findMany({
       where: { importId },
       include: { matchedJob: { select: { id: true, title: true, client: { select: { name: true } } } } },
       orderBy: { matchScore: { sort: "desc", nulls: "last" } },

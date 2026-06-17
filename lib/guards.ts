@@ -10,6 +10,8 @@ export async function requireUser() {
     name: session.user.name as string,
     email: session.user.email as string,
     role: (session.user as any).role as UserRole,
+    organizationId: (session.user as any).organizationId as string | null,
+    workspaceId: (session.user as any).workspaceId as string | null,
     clientId: (session.user as any).clientId as string | null,
     candidateId: (session.user as any).candidateId as string | null,
   };

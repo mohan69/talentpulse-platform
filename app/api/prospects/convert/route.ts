@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   if (!prospectIds?.length) return NextResponse.json({ error: "No prospects selected" }, { status: 400 });
 
-  const prospects = await prisma.prospect.findMany({
+  const prospects = await tenantPrisma.prospect.findMany({
     where: { id: { in: prospectIds }, status: { not: "CONVERTED" } },
   });
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
       if (candidate) {
         // Update the prospect to link to existing candidate
-        await prisma.prospect.update({
+        await tenantPrisma.prospect.update({
           where: { id: p.id },
           data: {
             status: "CONVERTED",
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
         });
 
         // Update prospect status
-        await prisma.prospect.update({
+        await tenantPrisma.prospect.update({
           where: { id: p.id },
           data: {
             status: "CONVERTED",

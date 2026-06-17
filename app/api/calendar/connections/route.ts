@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const connections = await prisma.calendarConnection.findMany({
+  const connections = await tenantPrisma.calendarConnection.findMany({
     where: { userId: user.id },
   });
   // Mask tokens
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const providerSetting = await prisma.integrationSetting.findFirst({
+  const providerSetting = await tenantPrisma.integrationSetting.findFirst({
     where: { provider: { in: ["GOOGLE_CALENDAR", "OUTLOOK_CALENDAR"] }, isActive: true },
   });
   if (!providerSetting) {
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   if (!provider) return NextResponse.json({ error: "Provider required" }, { status: 400 });
 
   // Create placeholder connection — OAuth flow would populate tokens
-  const connection = await prisma.calendarConnection.upsert({
+  const connection = await tenantPrisma.calendarConnection.upsert({
     where: { userId_provider: { userId: user.id, provider } },
     create: { userId: user.id, provider, email: email || user.email },
     update: { email: email || user.email, updatedAt: new Date() },

@@ -14,7 +14,7 @@ export default async function RecruiterOutreach() {
   const userId = (session.user as any).id;
 
   const [campaigns, candidates] = await Promise.all([
-    prisma.emailCampaign.findMany({
+    tenantPrisma.emailCampaign.findMany({
       where: { createdById: userId },
       include: { _count: { select: { recipients: true } } },
       orderBy: { createdAt: "desc" },

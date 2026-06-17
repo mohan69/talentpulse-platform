@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET(req: Request) {
   const where: any = {};
   if (jobId) where.jobId = jobId;
 
-  const postings = await prisma.jobPosting.findMany({
+  const postings = await tenantPrisma.jobPosting.findMany({
     where,
     include: {
       platform: true,
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   const { jobId, platformId } = body;
   if (!jobId || !platformId) return NextResponse.json({ error: "jobId and platformId required" }, { status: 400 });
   try {
-    const posting = await prisma.jobPosting.create({
+    const posting = await tenantPrisma.jobPosting.create({
       data: { jobId, platformId, status: "PENDING" },
       include: { platform: true },
     });
