@@ -104,6 +104,195 @@ enum ProspectStatus {
   REJECTED
 }
 
+enum OrganizationType {
+  AGENCY
+  STAFFING_FIRM
+  EXECUTIVE_SEARCH
+  GCC
+  ENTERPRISE
+  RPO
+  OTHER
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum WorkspaceType {
+  DEFAULT
+  BUSINESS_UNIT
+  GEOGRAPHY
+  CLIENT_TEAM
+  HIRING_TEAM
+  OTHER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+enum RoleScope {
+  PLATFORM
+  ORGANIZATION
+  WORKSPACE
+}
+
+// ---------------------------------------
+// MULTI-TENANT FOUNDATION
+// ---------------------------------------
+model Organization {
+  id                  String           @id @default(cuid())
+  name                String
+  slug                String           @unique
+  type                OrganizationType @default(AGENCY)
+  status              TenantStatus     @default(ACTIVE)
+  region              String?
+  defaultCurrency     String           @default("INR")
+  timezone            String           @default("Asia/Kolkata")
+  securityPolicy      Json?
+  dataRetentionPolicy Json?
+  modelProviderPolicy Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  workspaces          Workspace[]
+  roles               Role[]
+  memberships         OrganizationMembership[]
+  workspaceMemberships WorkspaceMembership[]
+
+  @@index([status])
+  @@index([type, region])
+}
+
+model Workspace {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  type           WorkspaceType @default(DEFAULT)
+  status         TenantStatus  @default(ACTIVE)
+  configuration  Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  memberships    WorkspaceMembership[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+}
+
+model Role {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  systemKey      String
+  scope          RoleScope     @default(ORGANIZATION)
+  isSystemRole   Boolean       @default(false)
+  description    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  permissions    RolePermission[]
+  organizationMemberships OrganizationMembership[]
+  workspaceMemberships    WorkspaceMembership[]
+
+  @@unique([organizationId, systemKey])
+  @@index([organizationId, scope])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+
+  @@index([resource, action])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  conditions   Json?
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model OrganizationMembership {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role             @relation(fields: [roleId], references: [id])
+  status         MembershipStatus @default(ACTIVE)
+  joinedAt       DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, roleId])
+  @@index([userId])
+  @@index([status])
+}
+
+model WorkspaceMembership {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspaceId    String
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role             @relation(fields: [roleId], references: [id])
+  status         MembershipStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([organizationId, userId])
+  @@index([workspaceId, roleId])
+  @@index([status])
+}
+
+model TenantAuditLog {
+  id                 String   @id @default(cuid())
+  organizationId     String?
+  workspaceId        String?
+  actorUserId        String?
+  action             String
+  resourceType       String
+  resourceId         String?
+  permissionDecision String?
+  ipAddress          String?
+  userAgent          String?
+  requestId          String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, actorUserId, createdAt])
+  @@index([organizationId, resourceType, resourceId])
+  @@index([requestId])
+}
+
 // ---------------------------------------
 // USERS (multi-role)
 // ---------------------------------------
@@ -120,9 +309,13 @@ model User {
   client         Client?   @relation(fields: [clientId], references: [id])
   candidateId    String?   @unique
   candidate      Candidate? @relation(fields: [candidateId], references: [id])
+  defaultOrganizationId String?
+  defaultWorkspaceId    String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  organizationMemberships OrganizationMembership[]
+  workspaceMemberships    WorkspaceMembership[]
   assignedJobs   Job[]            @relation("RecruiterJobs")
   createdJobs    Job[]            @relation("CreatedJobs")
   ownedCandidates Candidate[]     @relation("CandidateOwner")
@@ -138,6 +331,8 @@ model User {
 
   @@index([role])
   @@index([clientId])
+  @@index([defaultOrganizationId])
+  @@index([defaultWorkspaceId])
 }
 
 // ---------------------------------------
@@ -145,6 +340,8 @@ model User {
 // ---------------------------------------
 model Client {
   id          String  @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   name        String  @unique
   industry    String?
   website     String?
@@ -162,6 +359,8 @@ model Client {
   jobs        Job[]
 
   @@index([isActive])
+  @@index([organizationId, isActive])
+  @@index([organizationId, name])
 }
 
 // ---------------------------------------
@@ -169,6 +368,8 @@ model Client {
 // ---------------------------------------
 model Job {
   id             String      @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   title          String
   clientId       String
   client         Client      @relation(fields: [clientId], references: [id])
@@ -200,6 +401,9 @@ model Job {
   @@index([clientId])
   @@index([status])
   @@index([recruiterId])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, clientId, status])
+  @@index([organizationId, recruiterId, status])
 }
 
 // ---------------------------------------
@@ -207,6 +411,8 @@ model Job {
 // ---------------------------------------
 model Candidate {
   id                   String   @id @default(cuid())
+  organizationId       String?
+  workspaceId          String?
   name                 String
   email                String   @unique
   phone                String?
@@ -256,10 +462,17 @@ model Candidate {
   @@index([email])
   @@index([phone])
   @@index([source])
+  @@index([organizationId, workspaceId])
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+  @@index([organizationId, source])
+  @@index([organizationId, ownerId])
 }
 
 model Project {
   id             String    @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   candidateId    String
   candidate      Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   projectName    String
@@ -270,6 +483,7 @@ model Project {
   createdAt      DateTime  @default(now())
 
   @@index([candidateId])
+  @@index([organizationId, candidateId])
 }
 
 // ---------------------------------------
@@ -277,6 +491,8 @@ model Project {
 // ---------------------------------------
 model Application {
   id           String        @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   candidateId  String
   candidate    Candidate     @relation(fields: [candidateId], references: [id])
   jobId        String
@@ -298,6 +514,9 @@ model Application {
   @@index([stage])
   @@index([jobId])
   @@index([candidateId])
+  @@index([organizationId, workspaceId, stage])
+  @@index([organizationId, jobId, stage])
+  @@index([organizationId, candidateId])
 }
 
 // ---------------------------------------
@@ -305,6 +524,8 @@ model Application {
 // ---------------------------------------
 model Interview {
   id            String           @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   applicationId String
   application   Application      @relation(fields: [applicationId], references: [id])
   candidateId   String
@@ -327,6 +548,9 @@ model Interview {
   @@index([applicationId])
   @@index([candidateId])
   @@index([scheduledAt])
+  @@index([organizationId, workspaceId, scheduledAt])
+  @@index([organizationId, applicationId])
+  @@index([organizationId, candidateId])
 }
 
 // ---------------------------------------
@@ -334,6 +558,8 @@ model Interview {
 // ---------------------------------------
 model Offer {
   id              String      @id @default(cuid())
+  organizationId  String?
+  workspaceId     String?
   applicationId   String
   application     Application @relation(fields: [applicationId], references: [id])
   candidateId     String
@@ -353,6 +579,9 @@ model Offer {
 
   @@index([applicationId])
   @@index([status])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, applicationId])
+  @@index([organizationId, candidateId])
 }
 
 // ---------------------------------------
@@ -368,6 +597,8 @@ enum JobPostingStatus {
 
 model JobPosting {
   id           String           @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   jobId        String
   job          Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
   platformId   String
@@ -387,6 +618,9 @@ model JobPosting {
   @@index([jobId])
   @@index([platformId])
   @@index([status])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, jobId])
+  @@index([organizationId, platformId])
 }
 
 // ---------------------------------------
@@ -408,6 +642,8 @@ model RecruitingPlatform {
 
 model PlatformSubscription {
   id              String   @id @default(cuid())
+  organizationId  String?
+  workspaceId     String?
   platformId      String
   platform        RecruitingPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
   recruiterId     String
@@ -430,6 +666,9 @@ model PlatformSubscription {
   @@unique([platformId, recruiterId])
   @@index([recruiterId])
   @@index([platformId])
+  @@index([organizationId, workspaceId, isActive])
+  @@index([organizationId, recruiterId])
+  @@index([organizationId, platformId])
 }
 
 // ---------------------------------------
@@ -437,12 +676,16 @@ model PlatformSubscription {
 // ---------------------------------------
 model IntegrationSetting {
   id          String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   provider    String   @unique   // TWILIO, WHATSAPP, GOOGLE_CALENDAR, OUTLOOK_CALENDAR
   config      Json     // encrypted config JSON (apiKey, accountSid, authToken, etc.)
   isActive    Boolean  @default(false)
   lastTested  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([organizationId, workspaceId, isActive])
 }
 
 // ---------------------------------------
@@ -461,6 +704,8 @@ enum VoiceCallStatus {
 
 model VoiceScreening {
   id              String          @id @default(cuid())
+  organizationId  String?
+  workspaceId     String?
   applicationId   String
   application     Application     @relation(fields: [applicationId], references: [id])
   candidateId     String
@@ -486,6 +731,9 @@ model VoiceScreening {
   @@index([applicationId])
   @@index([candidateId])
   @@index([callStatus])
+  @@index([organizationId, workspaceId, callStatus])
+  @@index([organizationId, candidateId])
+  @@index([organizationId, applicationId])
 }
 
 // ---------------------------------------
@@ -506,6 +754,8 @@ enum WhatsAppMsgDirection {
 
 model WhatsAppTemplate {
   id          String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   name        String   @unique
   body        String
   category    String   // outreach, status_update, interview, follow_up, offer
@@ -515,10 +765,14 @@ model WhatsAppTemplate {
   updatedAt   DateTime @updatedAt
 
   messages    WhatsAppMessage[]
+
+  @@index([organizationId, workspaceId, isApproved])
 }
 
 model WhatsAppMessage {
   id              String              @id @default(cuid())
+  organizationId  String?
+  workspaceId     String?
   candidateId     String?
   candidate       Candidate?          @relation(fields: [candidateId], references: [id])
   phoneNumber     String
@@ -538,6 +792,9 @@ model WhatsAppMessage {
   @@index([candidateId])
   @@index([phoneNumber])
   @@index([status])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, candidateId])
+  @@index([organizationId, phoneNumber])
 }
 
 // ---------------------------------------
@@ -559,6 +816,8 @@ enum OutreachType {
 
 model EmailCampaign {
   id           String         @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   name         String
   type         OutreachType   @default(CANDIDATE)
   subject      String
@@ -578,10 +837,14 @@ model EmailCampaign {
 
   @@index([status])
   @@index([createdById])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, createdById])
 }
 
 model CampaignRecipient {
   id           String    @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   campaignId   String
   campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   email        String
@@ -592,6 +855,7 @@ model CampaignRecipient {
   createdAt    DateTime  @default(now())
 
   @@index([campaignId])
+  @@index([organizationId, campaignId])
   @@unique([campaignId, email])
 }
 
@@ -600,6 +864,8 @@ model CampaignRecipient {
 // ---------------------------------------
 model CalendarConnection {
   id           String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   userId       String
   provider     String   // google, outlook
   accessToken  String?
@@ -613,6 +879,7 @@ model CalendarConnection {
 
   @@unique([userId, provider])
   @@index([userId])
+  @@index([organizationId, userId])
 }
 
 // ---------------------------------------
@@ -620,6 +887,8 @@ model CalendarConnection {
 // ---------------------------------------
 model Note {
   id          String    @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   candidateId String?
   candidate   Candidate? @relation(fields: [candidateId], references: [id])
   authorId    String
@@ -628,10 +897,13 @@ model Note {
   createdAt   DateTime  @default(now())
 
   @@index([candidateId])
+  @@index([organizationId, workspaceId, candidateId])
 }
 
 model ActivityLog {
   id          String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   userId      String?
   user        User?    @relation(fields: [userId], references: [id])
   entityType  String   // "candidate", "job", "application", "interview"
@@ -642,10 +914,15 @@ model ActivityLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([organizationId, workspaceId, createdAt])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, userId, createdAt])
 }
 
 model EmailTemplate {
   id         String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   name       String   @unique
   subject    String
   body       String
@@ -653,10 +930,14 @@ model EmailTemplate {
   variables  String[] @default([])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([organizationId, workspaceId, category])
 }
 
 model EmailLog {
   id          String    @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   candidateId String?
   candidate   Candidate? @relation(fields: [candidateId], references: [id])
   senderId    String?
@@ -669,6 +950,8 @@ model EmailLog {
   createdAt   DateTime  @default(now())
 
   @@index([candidateId])
+  @@index([organizationId, candidateId])
+  @@index([organizationId, senderId])
 }
 
 // ---------------------------------------
@@ -676,6 +959,8 @@ model EmailLog {
 // ---------------------------------------
 model NaukriImport {
   id              String             @id @default(cuid())
+  organizationId  String?
+  workspaceId     String?
   userId          String
   user            User               @relation(fields: [userId], references: [id])
   rawData         String             // pasted RESDEX text
@@ -689,10 +974,14 @@ model NaukriImport {
 
   @@index([userId])
   @@index([createdAt])
+  @@index([organizationId, workspaceId, userId])
+  @@index([organizationId, createdAt])
 }
 
 model NaukriCandidate {
   id                  String               @id @default(cuid())
+  organizationId       String?
+  workspaceId          String?
   importId            String
   import              NaukriImport         @relation(fields: [importId], references: [id], onDelete: Cascade)
   name                String
@@ -728,6 +1017,9 @@ model NaukriCandidate {
   @@index([importId])
   @@index([status])
   @@index([matchedJobId])
+  @@index([organizationId, importId])
+  @@index([organizationId, status])
+  @@index([organizationId, matchedJobId])
 }
 
 // ---------------------------------------
@@ -735,6 +1027,8 @@ model NaukriCandidate {
 // ---------------------------------------
 model Prospect {
   id                 String          @id @default(cuid())
+  organizationId     String?
+  workspaceId        String?
   name               String
   email              String?
   phone              String?
@@ -779,10 +1073,17 @@ model Prospect {
   @@index([source])
   @@index([ownerId])
   @@index([importBatchId])
+  @@index([organizationId, workspaceId, status])
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+  @@index([organizationId, source])
+  @@index([organizationId, ownerId])
 }
 
 model SavedSearch {
   id          String   @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
@@ -793,10 +1094,13 @@ model SavedSearch {
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+  @@index([organizationId, workspaceId, userId])
 }
 
 model CompanyProfile {
   id                String   @id @default("default")
+  organizationId    String?
+  workspaceId       String?
   name              String   @default("CareerPaths India")
   brandName         String   @default("CareerPaths")
   website           String   @default("")
@@ -818,4 +1122,6 @@ model CompanyProfile {
 
   updatedAt         DateTime @updatedAt
   createdAt         DateTime @default(now())
+
+  @@index([organizationId])
 }
