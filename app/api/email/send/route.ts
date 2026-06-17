@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +41,7 @@ export async function POST(req: Request) {
     const result = await resp.json().catch(() => ({}));
     const success = result?.success !== false;
 
-    await tenantPrisma.emailLog.create({
+    const emailLog = await tenantPrisma.emailLog.create({
       data: {
         candidateId: candidateId ?? null,
         senderId: user.id,
@@ -50,6 +52,23 @@ export async function POST(req: Request) {
         status: success ? "sent" : (result?.notification_disabled ? "disabled" : "failed"),
       },
     });
+
+    captureMemory({
+      userId: user.id,
+      entityType: "email",
+      entityId: emailLog.id,
+      action: "email_sent",
+      metadata: {
+        memoryType: "candidate",
+        summary: `Email sent to ${recipient}: "${subject}"`,
+        sourceModel: "emailLog",
+        sourceId: emailLog.id,
+        tags: [...deriveTagsFromEntityType("email"), ...deriveTagsFromAction("email_sent")],
+        confidence: "auto",
+        importance: "low",
+      },
+    });
+
     return NextResponse.json({ success });
   } catch (e: any) {
     console.error("send email", e);

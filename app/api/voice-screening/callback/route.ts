@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { VoiceCallStatus } from "@prisma/client";
 import { tenantPrisma } from "@/lib/repositories";
 import { resolveRecordTenantContext, resolveRecordTenantContextByWhere } from "@/lib/tenant/provider-context";
+import { captureMemoryWithContext } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 import type { TenantContext } from "@/lib/tenant/context";
 
 export const dynamic = "force-dynamic";
@@ -323,7 +325,22 @@ export async function POST(req: Request) {
           // If call completed, try to fetch transcript from ElevenLabs immediately
           // Will also attempt to find conversationId if not already set
           // This may be too early; UI also has a "Fetch Transcript" button for manual retry
-          if (twilioStatus === "completed") {
+      if (twilioStatus === "completed") {
+            captureMemoryWithContext(resolved.tenantContext, {
+              userId: null,
+              entityType: "voiceScreening",
+              entityId: screening.id,
+              action: "call_outcome",
+              metadata: {
+                memoryType: "candidate",
+                summary: "Voice screening call completed",
+                sourceModel: "voiceScreening",
+                sourceId: screening.id,
+                tags: [...deriveTagsFromEntityType("voiceScreening"), ...deriveTagsFromAction("screening_completed")],
+                confidence: "auto",
+                importance: "medium",
+              },
+            });
             // Don't await — fire and forget so the callback response isn't delayed
             fetchElevenLabsConversation(screening, undefined, resolved.tenantContext).catch((e: any) =>
               console.error("[VoiceScreening Callback] Transcript fetch error:", e.message)
@@ -376,6 +393,23 @@ export async function POST(req: Request) {
         callStatus: (callStatus as VoiceCallStatus) || VoiceCallStatus.COMPLETED,
         completedAt: new Date(),
         recordingUrl: recordingUrl || null,
+      },
+    });
+
+    captureMemoryWithContext(tenantContext, {
+      userId: null,
+      entityType: "voiceScreening",
+      entityId: screeningId,
+      action: "screening_completed",
+      metadata: {
+        memoryType: "candidate",
+        summary: `Voice screening completed${updated.aiScore != null ? ` (Score: ${updated.aiScore}/100)` : ""}`,
+        details: updated.aiSummary ?? null,
+        sourceModel: "voiceScreening",
+        sourceId: screeningId,
+        tags: [...deriveTagsFromEntityType("voiceScreening"), ...deriveTagsFromAction("screening_completed")],
+        confidence: "auto",
+        importance: updated.aiScore != null && updated.aiScore >= 80 ? "high" : "medium",
       },
     });
 

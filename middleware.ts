@@ -68,5 +68,6 @@ export const config = {
     "/api/reports/:path*",
     "/api/saved-searches/:path*",
     "/api/company-profile/:path*",
+    "/api/memory/:path*",
   ],
 };

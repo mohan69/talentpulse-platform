@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -57,5 +59,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     },
   });
   await logActivity({ userId: user.id, entityType: "job", entityId: updated.id, action: "updated" });
+  if (body.skills || body.salaryMin || body.salaryMax || body.description) {
+    captureMemory({
+      userId: user.id,
+      entityType: "job",
+      entityId: updated.id,
+      action: "requirement_changed",
+      metadata: {
+        memoryType: "requirement",
+        summary: "Job requirements updated",
+        sourceModel: "job",
+        sourceId: updated.id,
+        tags: [...deriveTagsFromEntityType("job"), ...deriveTagsFromAction("requirement_changed")],
+        confidence: "auto",
+        importance: "high",
+      },
+    });
+  }
   return NextResponse.json(updated);
 }

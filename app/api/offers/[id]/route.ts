@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +26,60 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const updated = await tenantPrisma.offer.update({ where: { id: params.id }, data });
   if (body.status === "ACCEPTED") {
     await tenantPrisma.application.update({ where: { id: updated.applicationId }, data: { stage: "OFFER_ACCEPTED" } });
+    captureMemory({
+      userId: user.id,
+      entityType: "application",
+      entityId: updated.applicationId,
+      action: "offer_accepted",
+      metadata: {
+        memoryType: "outcome",
+        summary: `Offer accepted${updated.offeredCtc ? ` (₹${(updated.offeredCtc / 100000).toFixed(1)}L)` : ""}`,
+        details: updated.notes ?? null,
+        sourceModel: "offer",
+        sourceId: updated.id,
+        tags: [...deriveTagsFromEntityType("offer"), ...deriveTagsFromAction("offer_accepted")],
+        confidence: "auto",
+        sentiment: "positive",
+        importance: "high",
+      },
+    });
+  }
+  if (body.status === "REJECTED") {
+    captureMemory({
+      userId: user.id,
+      entityType: "application",
+      entityId: updated.applicationId,
+      action: "offer_rejected",
+      metadata: {
+        memoryType: "outcome",
+        summary: "Offer rejected",
+        sourceModel: "offer",
+        sourceId: updated.id,
+        tags: [...deriveTagsFromEntityType("offer"), ...deriveTagsFromAction("offer_rejected")],
+        confidence: "auto",
+        sentiment: "negative",
+        importance: "high",
+      },
+    });
   }
   if (body.actualJoinedAt) {
     await tenantPrisma.application.update({ where: { id: updated.applicationId }, data: { stage: "JOINED" } });
+    captureMemory({
+      userId: user.id,
+      entityType: "application",
+      entityId: updated.applicationId,
+      action: "candidate_joined",
+      metadata: {
+        memoryType: "outcome",
+        summary: `Candidate joined on ${new Date(body.actualJoinedAt).toLocaleDateString("en-IN")}`,
+        sourceModel: "offer",
+        sourceId: updated.id,
+        tags: [...deriveTagsFromEntityType("offer"), ...deriveTagsFromAction("candidate_joined")],
+        confidence: "auto",
+        sentiment: "positive",
+        importance: "high",
+      },
+    });
   }
   await logActivity({ userId: user.id, entityType: "offer", entityId: updated.id, action: "updated" });
   return NextResponse.json(updated);

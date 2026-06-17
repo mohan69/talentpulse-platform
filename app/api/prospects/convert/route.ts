@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +102,21 @@ export async function POST(req: Request) {
         prospectName: p.name,
         candidateId: candidate.id,
       } });
+      captureMemory({
+        userId: user.id,
+        entityType: "candidate",
+        entityId: candidate.id,
+        action: "prospect_converted",
+        metadata: {
+          memoryType: "candidate",
+          summary: `Prospect converted to candidate (source: ${p.source ?? "unknown"})`,
+          sourceModel: "prospect",
+          sourceId: p.id,
+          tags: [...deriveTagsFromEntityType("prospect"), ...deriveTagsFromAction("prospect_converted"), (p.source ?? "unknown").toLowerCase()],
+          confidence: "auto",
+          importance: "medium",
+        },
+      });
     } catch (err: any) {
       console.error(`Failed to convert prospect ${p.id}:`, err);
       results.push({ prospectId: p.id, name: p.name, error: err.message });

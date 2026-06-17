@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { extractTags, deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,23 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       body: body.body ?? "",
     },
     include: { author: { select: { id: true, name: true } } },
+  });
+  const tags = [...deriveTagsFromEntityType("note"), ...deriveTagsFromAction("note_added"), ...extractTags(body.body ?? "")];
+  captureMemory({
+    userId: user.id,
+    entityType: "note",
+    entityId: note.id,
+    action: "note_added",
+    metadata: {
+      memoryType: "candidate",
+      summary: `Note: ${(body.body ?? "").slice(0, 100)}${(body.body ?? "").length > 100 ? "..." : ""}`,
+      details: body.body ?? null,
+      sourceModel: "note",
+      sourceId: note.id,
+      tags,
+      confidence: "auto",
+      importance: "medium",
+    },
   });
   return NextResponse.json(note);
 }

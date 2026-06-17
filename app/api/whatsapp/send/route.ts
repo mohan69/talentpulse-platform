@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
+import { captureMemory } from "@/lib/memory/service";
+import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,22 @@ export async function POST(req: Request) {
       direction: "OUTBOUND",
       status: "QUEUED",
       sentById: user.id,
+    },
+  });
+
+  captureMemory({
+    userId: user.id,
+    entityType: "whatsapp",
+    entityId: message.id,
+    action: "message_sent",
+    metadata: {
+      memoryType: "candidate",
+      summary: `WhatsApp sent: "${(messageBody ?? "").slice(0, 80)}${(messageBody ?? "").length > 80 ? "..." : ""}"`,
+      sourceModel: "whatsAppMessage",
+      sourceId: message.id,
+      tags: [...deriveTagsFromEntityType("whatsapp"), ...deriveTagsFromAction("message_sent")],
+      confidence: "auto",
+      importance: "low",
     },
   });
 
