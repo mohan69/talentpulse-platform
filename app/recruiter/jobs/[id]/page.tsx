@@ -6,11 +6,12 @@ import { formatCurrency } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { JobPostingPanel } from "@/components/workspace/job-posting-panel";
 import { RecruiterApplicationsList } from "./applications-list";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecruiterJobDetail({ params }: { params: { id: string } }) {
-  const job = await prisma.job.findUnique({
+  const job = await tenantPrisma.job.findUnique({
     where: { id: params.id },
     include: {
       client: true,

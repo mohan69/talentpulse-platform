@@ -7,6 +7,7 @@ import { StatCard } from "@/components/workspace/stat-card";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { Briefcase, Users, Calendar, CheckCircle } from "lucide-react";
 import Link from "next/link";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,11 @@ export default async function ClientDashboard() {
   const session = await getServerSession(authOptions);
   const clientId = session?.user?.clientId ?? "";
   const [openJobs, submitted, interviews, joined, submittedList] = await Promise.all([
-    prisma.job.count({ where: { clientId, status: "OPEN" } }),
-    prisma.application.count({ where: { job: { clientId }, stage: { in: [PipelineStage.SUBMITTED, PipelineStage.INTERVIEW_SCHEDULED, PipelineStage.INTERVIEW_COMPLETE, PipelineStage.OFFER_EXTENDED, PipelineStage.OFFER_ACCEPTED] } } }),
-    prisma.interview.count({ where: { application: { job: { clientId } }, status: "SCHEDULED" } }),
-    prisma.application.count({ where: { job: { clientId }, stage: PipelineStage.JOINED } }),
-    prisma.application.findMany({ where: { job: { clientId }, stage: { in: [PipelineStage.SUBMITTED, PipelineStage.INTERVIEW_SCHEDULED, PipelineStage.INTERVIEW_COMPLETE] } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
+    tenantPrisma.job.count({ where: { clientId, status: "OPEN" } }),
+    tenantPrisma.application.count({ where: { job: { clientId }, stage: { in: [PipelineStage.SUBMITTED, PipelineStage.INTERVIEW_SCHEDULED, PipelineStage.INTERVIEW_COMPLETE, PipelineStage.OFFER_EXTENDED, PipelineStage.OFFER_ACCEPTED] } } }),
+    tenantPrisma.interview.count({ where: { application: { job: { clientId } }, status: "SCHEDULED" } }),
+    tenantPrisma.application.count({ where: { job: { clientId }, stage: PipelineStage.JOINED } }),
+    tenantPrisma.application.findMany({ where: { job: { clientId }, stage: { in: [PipelineStage.SUBMITTED, PipelineStage.INTERVIEW_SCHEDULED, PipelineStage.INTERVIEW_COMPLETE] } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
   ]);
 
   return (

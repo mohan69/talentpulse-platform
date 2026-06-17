@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -260,7 +261,7 @@ export async function POST(req: NextRequest) {
     const skip = (page - 1) * pageSize;
 
     const [candidates, totalCount] = await Promise.all([
-      prisma.candidate.findMany({
+      tenantPrisma.candidate.findMany({
         where,
         orderBy,
         skip,
@@ -292,7 +293,7 @@ export async function POST(req: NextRequest) {
           _count: { select: { applications: true } },
         },
       }),
-      prisma.candidate.count({ where }),
+      tenantPrisma.candidate.count({ where }),
     ]);
 
     return NextResponse.json({

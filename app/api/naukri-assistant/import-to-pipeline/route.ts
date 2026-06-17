@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
       try {
         // Check for existing candidate by email
         let existingCandidate = nc.email
-          ? await prisma.candidate.findUnique({ where: { email: nc.email } })
+          ? await tenantPrisma.candidate.findUnique({ where: { email: nc.email } })
           : null;
 
         let candidateId: string;
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
         if (existingCandidate) {
           candidateId = existingCandidate.id;
           // Update with any new info from Naukri
-          await prisma.candidate.update({
+          await tenantPrisma.candidate.update({
             where: { id: candidateId },
             data: {
               ...(nc.phone && !existingCandidate.phone ? { phone: nc.phone } : {}),
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
           };
 
           // Create new candidate
-          const newCandidate = await prisma.candidate.create({
+          const newCandidate = await tenantPrisma.candidate.create({
             data: {
               name: nc.name,
               email: nc.email || `naukri-${nc.id}@placeholder.com`,
@@ -83,11 +84,11 @@ export async function POST(request: Request) {
         let applicationId: string | null = null;
         if (nc.matchedJobId) {
           // Check for existing application
-          const existingApp = await prisma.application.findFirst({
+          const existingApp = await tenantPrisma.application.findFirst({
             where: { candidateId, jobId: nc.matchedJobId },
           });
           if (!existingApp) {
-            const app = await prisma.application.create({
+            const app = await tenantPrisma.application.create({
               data: {
                 candidateId,
                 jobId: nc.matchedJobId,

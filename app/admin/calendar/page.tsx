@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { PageTitle } from "@/components/workspace/page-title";
 import { CalendarClient } from "./calendar-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export default async function AdminCalendar() {
   const [googleActive, outlookActive, upcomingInterviews] = await Promise.all([
     prisma.integrationSetting.findUnique({ where: { provider: "GOOGLE_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
     prisma.integrationSetting.findUnique({ where: { provider: "OUTLOOK_CALENDAR" } }).then((s: any) => s?.isActive ?? false),
-    prisma.interview.findMany({
+    tenantPrisma.interview.findMany({
       where: { scheduledAt: { gte: new Date() } },
       include: {
         application: { include: { job: { select: { title: true } } } },

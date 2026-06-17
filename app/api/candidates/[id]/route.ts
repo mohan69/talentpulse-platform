@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const body = await req.json();
 
     // Fetch current candidate to compare values and avoid unnecessary unique constraint issues
-    const existing = await prisma.candidate.findUnique({ where: { id: params.id } });
+    const existing = await tenantPrisma.candidate.findUnique({ where: { id: params.id } });
     if (!existing) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
 
     const data: any = {};
@@ -40,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (body.email !== undefined && body.email !== existing.email) {
       // Check if the new email is already taken by another candidate
       if (body.email) {
-        const emailTaken = await prisma.candidate.findFirst({
+        const emailTaken = await tenantPrisma.candidate.findFirst({
           where: { email: body.email, id: { not: params.id } },
         });
         if (emailTaken) {
@@ -50,7 +51,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       data.email = body.email;
     }
 
-    const updated = await prisma.candidate.update({
+    const updated = await tenantPrisma.candidate.update({
       where: { id: params.id },
       data,
     });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
   if (upcoming) where.scheduledAt = { gte: new Date() };
   if (user.role === "CLIENT") where.application = { job: { clientId: user.clientId } };
   if (user.role === "CANDIDATE") where.candidateId = user.candidateId;
-  const interviews = await prisma.interview.findMany({
+  const interviews = await tenantPrisma.interview.findMany({
     where,
     include: {
       candidate: true,
@@ -34,10 +35,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const body = await req.json();
-  const app = await prisma.application.findUnique({ where: { id: body.applicationId } });
+  const app = await tenantPrisma.application.findUnique({ where: { id: body.applicationId } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
 
-  const interview = await prisma.interview.create({
+  const interview = await tenantPrisma.interview.create({
     data: {
       applicationId: body.applicationId,
       candidateId: app.candidateId,
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     },
   });
   if (app.stage !== "INTERVIEW_SCHEDULED" && app.stage !== "INTERVIEW_COMPLETE") {
-    await prisma.application.update({
+    await tenantPrisma.application.update({
       where: { id: app.id },
       data: { stage: "INTERVIEW_SCHEDULED" },
     });

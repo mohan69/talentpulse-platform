@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const job = await prisma.job.findUnique({
+  const job = await tenantPrisma.job.findUnique({
     where: { id: params.id },
     include: {
       client: true,
@@ -36,7 +37,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const body = await req.json();
-  const updated = await prisma.job.update({
+  const updated = await tenantPrisma.job.update({
     where: { id: params.id },
     data: {
       title: body.title,

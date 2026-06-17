@@ -7,11 +7,12 @@ import { Mail, Phone, MapPin, ExternalLink } from "lucide-react";
 import { isPlaceholderEmail } from "@/lib/candidate-utils";
 import { AIScreeningPanel } from "@/components/workspace/ai-screening-panel";
 import { AddNoteForm, AddProjectForm, EmailComposeDialog } from "@/components/workspace/candidate-detail-actions";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecruiterCandidateDetail({ params }: { params: { id: string } }) {
-  const c = await prisma.candidate.findUnique({ where: { id: params.id }, include: { applications: { include: { job: { include: { client: true } } } }, projects: true, notes: { include: { author: true }, orderBy: { createdAt: "desc" } } } });
+  const c = await tenantPrisma.candidate.findUnique({ where: { id: params.id }, include: { applications: { include: { job: { include: { client: true } } } }, projects: true, notes: { include: { author: true }, orderBy: { createdAt: "desc" } } } });
   if (!c) notFound();
   return (
     <>

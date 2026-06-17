@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
       { skills: { has: q } },
     ];
   }
-  const candidates = await prisma.candidate.findMany({
+  const candidates = await tenantPrisma.candidate.findMany({
     where,
     orderBy: { createdAt: "desc" },
     include: {
@@ -55,14 +56,14 @@ export async function POST(req: Request) {
   const body = await req.json();
   try {
     const email = String(body.email).toLowerCase().trim();
-    const existing = await prisma.candidate.findUnique({ where: { email } });
+    const existing = await tenantPrisma.candidate.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json(
         { error: "Duplicate candidate", existingId: existing.id, existing },
         { status: 409 },
       );
     }
-    const candidate = await prisma.candidate.create({
+    const candidate = await tenantPrisma.candidate.create({
       data: {
         name: body.name,
         email,

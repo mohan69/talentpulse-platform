@@ -5,12 +5,13 @@ import { PageTitle } from "@/components/workspace/page-title";
 import Link from "next/link";
 import { Briefcase, MapPin, Users } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecruiterJobs() {
   const session = await getServerSession(authOptions);
-  const jobs = await prisma.job.findMany({ where: { recruiterId: session?.user?.id }, orderBy: { createdAt: "desc" }, include: { client: true, _count: { select: { applications: true } } } });
+  const jobs = await tenantPrisma.job.findMany({ where: { recruiterId: session?.user?.id }, orderBy: { createdAt: "desc" }, include: { client: true, _count: { select: { applications: true } } } });
   return (<>      <PageTitle title="My Requisitions" description="Positions assigned to you." />
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{jobs.map((j) => (
       <Link key={j.id} href={`/recruiter/jobs/${j.id}`} className="rounded-xl bg-card shadow-sm p-5 hover:shadow-md block">

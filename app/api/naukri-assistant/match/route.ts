@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     // Fetch open jobs
-    const openJobs = await prisma.job.findMany({
+    const openJobs = await tenantPrisma.job.findMany({
       where: { status: "OPEN" },
       include: { client: { select: { name: true } } },
     });

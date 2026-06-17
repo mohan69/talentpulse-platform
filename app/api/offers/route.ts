@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
-  const app = await prisma.application.findUnique({ where: { id: body.applicationId } });
+  const app = await tenantPrisma.application.findUnique({ where: { id: body.applicationId } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
   const offer = await prisma.offer.create({
     data: {
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
       feePercent: body.feePercent != null ? Number(body.feePercent) : null,
     },
   });
-  await prisma.application.update({
+  await tenantPrisma.application.update({
     where: { id: app.id },
     data: { stage: "OFFER_EXTENDED" },
   });

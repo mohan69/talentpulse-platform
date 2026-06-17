@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { computeHeuristicScore } from "@/lib/ai-screening";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
   const { applicationId } = body ?? {};
   if (!applicationId) return NextResponse.json({ error: "applicationId required" }, { status: 400 });
 
-  const app = await prisma.application.findUnique({
+  const app = await tenantPrisma.application.findUnique({
     where: { id: applicationId },
     include: { candidate: { include: { projects: true } }, job: true },
   });
@@ -90,7 +91,7 @@ Scores 0-100. Respond with raw JSON only.`;
         if (!resp.ok || !resp.body) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "error", message: "LLM API error" })}\n\n`));
           // Still save heuristic-only result
-          await prisma.application.update({
+          await tenantPrisma.application.update({
             where: { id: applicationId },
             data: {
               matchScore: heuristic.matchScore,
@@ -122,7 +123,7 @@ Scores 0-100. Respond with raw JSON only.`;
                 const m = buffer.match(/\{[\s\S]*\}/); if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
               }
               const report = { heuristic, ai: parsed };
-              await prisma.application.update({
+              await tenantPrisma.application.update({
                 where: { id: applicationId },
                 data: {
                   matchScore: parsed?.matchScore ?? heuristic.matchScore,
@@ -132,7 +133,7 @@ Scores 0-100. Respond with raw JSON only.`;
                 },
               });
               if (parsed?.executiveSummary) {
-                await prisma.candidate.update({
+                await tenantPrisma.candidate.update({
                   where: { id: app.candidateId },
                   data: { aiSummary: parsed.executiveSummary },
                 });
@@ -154,7 +155,7 @@ Scores 0-100. Respond with raw JSON only.`;
           const m = buffer.match(/\{[\s\S]*\}/); if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
         }
         const report = { heuristic, ai: parsed };
-        await prisma.application.update({
+        await tenantPrisma.application.update({
           where: { id: applicationId },
           data: {
             matchScore: parsed?.matchScore ?? heuristic.matchScore,

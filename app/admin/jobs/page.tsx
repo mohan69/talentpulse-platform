@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Briefcase, Plus, MapPin, Users, Pencil } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/format";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminJobs() {
-  const jobs = await prisma.job.findMany({ orderBy: { createdAt: "desc" }, include: { client: true, recruiter: true, _count: { select: { applications: true } } } });
+  const jobs = await tenantPrisma.job.findMany({ orderBy: { createdAt: "desc" }, include: { client: true, recruiter: true, _count: { select: { applications: true } } } });
   return (
     <>
       <PageTitle title="Requisitions" description="All client positions across active engagements." actions={<Link href="/admin/jobs/new"><Button><Plus className="h-4 w-4 mr-2" /> New Job</Button></Link>} />

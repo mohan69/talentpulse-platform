@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { computeHeuristicScore } from "@/lib/ai-screening";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
   if (candidateId) where.candidateId = candidateId;
   if (user.role === "CLIENT") where.job = { clientId: user.clientId };
   if (user.role === "CANDIDATE") where.candidateId = user.candidateId;
-  const apps = await prisma.application.findMany({
+  const apps = await tenantPrisma.application.findMany({
     where,
     include: {
       candidate: true,
@@ -39,19 +40,19 @@ export async function POST(req: Request) {
   const { candidateId, jobId } = body ?? {};
   if (!candidateId || !jobId) return NextResponse.json({ error: "candidateId and jobId required" }, { status: 400 });
 
-  const existing = await prisma.application.findUnique({
+  const existing = await tenantPrisma.application.findUnique({
     where: { candidateId_jobId: { candidateId, jobId } },
   });
   if (existing) return NextResponse.json({ error: "Application already exists", applicationId: existing.id }, { status: 409 });
 
   const [candidate, job] = await Promise.all([
-    prisma.candidate.findUnique({ where: { id: candidateId } }),
-    prisma.job.findUnique({ where: { id: jobId } }),
+    tenantPrisma.candidate.findUnique({ where: { id: candidateId } }),
+    tenantPrisma.job.findUnique({ where: { id: jobId } }),
   ]);
   if (!candidate || !job) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const score = computeHeuristicScore(candidate, job);
-  const app = await prisma.application.create({
+  const app = await tenantPrisma.application.create({
     data: {
       candidateId,
       jobId,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.interviewerName !== undefined) data.interviewerName = body.interviewerName || null;
   if (body.round !== undefined) data.round = body.round;
   if (body.mode !== undefined) data.mode = body.mode;
-  const updated = await prisma.interview.update({ where: { id: params.id }, data });
+  const updated = await tenantPrisma.interview.update({ where: { id: params.id }, data });
   if (body.status === "COMPLETED") {
-    await prisma.application.update({
+    await tenantPrisma.application.update({
       where: { id: updated.applicationId },
       data: { stage: "INTERVIEW_COMPLETE" },
     });

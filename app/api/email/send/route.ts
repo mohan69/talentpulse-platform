@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const { candidateId, subject, htmlBody, templateName } = body ?? {};
-  const candidate = candidateId ? await prisma.candidate.findUnique({ where: { id: candidateId } }) : null;
+  const candidate = candidateId ? await tenantPrisma.candidate.findUnique({ where: { id: candidateId } }) : null;
   const recipient = body.recipient ?? candidate?.email;
   if (!recipient || !subject || !htmlBody) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });

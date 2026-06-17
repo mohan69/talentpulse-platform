@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { PipelineStage } from "@prisma/client";
 import { PageTitle } from "@/components/workspace/page-title";
 import { VoiceScreeningClient } from "./voice-screening-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export default async function AdminVoiceScreening() {
       take: 50,
     }),
     prisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } }).then((s) => s?.isActive ?? false),
-    prisma.application.findMany({
+    tenantPrisma.application.findMany({
       where: { stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } },
       include: {
         candidate: { select: { id: true, name: true, phone: true, email: true } },

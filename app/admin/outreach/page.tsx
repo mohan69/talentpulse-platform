@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { PageTitle } from "@/components/workspace/page-title";
 import { OutreachClient } from "./outreach-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function AdminOutreach() {
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.candidate.findMany({
+    tenantPrisma.candidate.findMany({
       select: { id: true, name: true, email: true, currentCompany: true, currentDesignation: true },
       orderBy: { createdAt: "desc" },
       take: 200,

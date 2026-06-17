@@ -3,11 +3,12 @@ import { PageTitle } from "@/components/workspace/page-title";
 import { notFound } from "next/navigation";
 import { JobDetailClient } from "./job-detail-client";
 import { JobPostingPanel } from "@/components/workspace/job-posting-panel";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminJobDetail({ params }: { params: { id: string } }) {
-  const job = await prisma.job.findUnique({
+  const job = await tenantPrisma.job.findUnique({
     where: { id: params.id },
     include: {
       client: true,
@@ -23,7 +24,7 @@ export default async function AdminJobDetail({ params }: { params: { id: string 
   const [recruiters, allPlatforms, clients] = await Promise.all([
     prisma.user.findMany({ where: { role: "RECRUITER" }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
     prisma.recruitingPlatform.findMany({ where: { isActive: true }, select: { id: true, name: true, websiteUrl: true }, orderBy: { name: "asc" } }),
-    prisma.client.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    tenantPrisma.client.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   const serialized = JSON.parse(JSON.stringify(job));

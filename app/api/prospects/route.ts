@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
     const existing = await prisma.prospect.findFirst({ where: { email } });
     if (existing) return NextResponse.json({ error: "A prospect with this email already exists", existingId: existing.id }, { status: 409 });
     // Also check if already a candidate
-    const existingCandidate = await prisma.candidate.findFirst({ where: { email } });
+    const existingCandidate = await tenantPrisma.candidate.findFirst({ where: { email } });
     if (existingCandidate) return NextResponse.json({ error: "This person is already a candidate", candidateId: existingCandidate.id }, { status: 409 });
   }
 

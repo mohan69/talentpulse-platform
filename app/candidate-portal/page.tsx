@@ -5,6 +5,7 @@ import { PageTitle } from "@/components/workspace/page-title";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { formatDate, formatCurrency } from "@/lib/format";
 import Link from "next/link";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,8 @@ export default async function CandidatePortal() {
   const candidateId = session?.user?.candidateId;
   if (!candidateId) return <div className="p-6 rounded-xl bg-card shadow-sm"><h2 className="font-display text-xl font-semibold mb-2">Welcome!</h2><p className="text-muted-foreground">Your candidate profile is being set up. Please check back shortly.</p></div>;
   const [candidate, applications] = await Promise.all([
-    prisma.candidate.findUnique({ where: { id: candidateId } }),
-    prisma.application.findMany({ where: { candidateId }, orderBy: { updatedAt: "desc" }, include: { job: { include: { client: true } } } }),
+    tenantPrisma.candidate.findUnique({ where: { id: candidateId } }),
+    tenantPrisma.application.findMany({ where: { candidateId }, orderBy: { updatedAt: "desc" }, include: { job: { include: { client: true } } } }),
   ]);
 
   return (

@@ -6,12 +6,13 @@ import { PageTitle } from "@/components/workspace/page-title";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { initials } from "@/lib/format";
 import { isPlaceholderEmail } from "@/lib/candidate-utils";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientPipeline() {
   const session = await getServerSession(authOptions);
-  const applications = await prisma.application.findMany({
+  const applications = await tenantPrisma.application.findMany({
     where: {
       job: { clientId: (session?.user?.clientId ?? "") },
       stage: { in: [PipelineStage.SUBMITTED, PipelineStage.INTERVIEW_SCHEDULED, PipelineStage.INTERVIEW_COMPLETE, PipelineStage.OFFER_EXTENDED, PipelineStage.OFFER_ACCEPTED, PipelineStage.JOINED] },

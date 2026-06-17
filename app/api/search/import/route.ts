@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     // Check for duplicates by email or name+company
     if (email) {
-      const existing = await prisma.candidate.findFirst({
+      const existing = await tenantPrisma.candidate.findFirst({
         where: { email: email },
       });
       if (existing) {
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     // Check if this email already exists — if placeholder collides, make it unique
     let finalEmail = candidateEmail;
-    const existingCandidate = await prisma.candidate.findFirst({
+    const existingCandidate = await tenantPrisma.candidate.findFirst({
       where: { email: candidateEmail },
     });
     if (existingCandidate) {
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
     // All other web platforms (Indeed, Glassdoor, Shine, Instahyre, Hirist, IIMJobs, Cutshort, FoundIT, Web)
     // map to OTHER since the Prisma enum only has: NAUKRI, LINKEDIN, REFERRAL, DIRECT, OTHER
 
-    const candidate = await prisma.candidate.create({
+    const candidate = await tenantPrisma.candidate.create({
       data: {
         name: name.trim(),
         email: finalEmail,

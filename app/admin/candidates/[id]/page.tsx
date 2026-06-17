@@ -6,11 +6,12 @@ import { notFound } from "next/navigation";
 import { Mail, Phone, MapPin, ExternalLink, AlertCircle } from "lucide-react";
 import { AddNoteForm, AddProjectForm, EmailComposeDialog } from "@/components/workspace/candidate-detail-actions";
 import { isPlaceholderEmail } from "@/lib/candidate-utils";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCandidateDetail({ params }: { params: { id: string } }) {
-  const c = await prisma.candidate.findUnique({ where: { id: params.id }, include: { applications: { include: { job: { include: { client: true } } } }, projects: true, notes: { include: { author: true }, orderBy: { createdAt: "desc" } } } });
+  const c = await tenantPrisma.candidate.findUnique({ where: { id: params.id }, include: { applications: { include: { job: { include: { client: true } } } }, projects: true, notes: { include: { author: true }, orderBy: { createdAt: "desc" } } } });
   if (!c) notFound();
   return (
     <>

@@ -7,6 +7,7 @@ import { StatCard } from "@/components/workspace/stat-card";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { Briefcase, Users, Calendar, Target, UserSearch } from "lucide-react";
 import Link from "next/link";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,11 @@ export default async function RecruiterDashboard() {
   const session = await getServerSession(authOptions);
   const uid = session?.user?.id ?? "";
   const [myJobs, myApps, myInterviews, myProspects, recent] = await Promise.all([
-    prisma.job.count({ where: { recruiterId: uid, status: "OPEN" } }),
-    prisma.application.count({ where: { job: { recruiterId: uid }, stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
-    prisma.interview.count({ where: { application: { job: { recruiterId: uid } }, status: "SCHEDULED" } }),
+    tenantPrisma.job.count({ where: { recruiterId: uid, status: "OPEN" } }),
+    tenantPrisma.application.count({ where: { job: { recruiterId: uid }, stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
+    tenantPrisma.interview.count({ where: { application: { job: { recruiterId: uid } }, status: "SCHEDULED" } }),
     prisma.prospect.count({ where: { ownerId: uid, status: { not: "CONVERTED" } } }),
-    prisma.application.findMany({ where: { job: { recruiterId: uid } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
+    tenantPrisma.application.findMany({ where: { job: { recruiterId: uid } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
   ]);
 
   return (

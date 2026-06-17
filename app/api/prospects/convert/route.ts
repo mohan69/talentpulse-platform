@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   for (const p of prospects) {
     try {
       // Check if candidate already exists by email
-      let candidate = p.email ? await prisma.candidate.findFirst({ where: { email: p.email } }) : null;
+      let candidate = p.email ? await tenantPrisma.candidate.findFirst({ where: { email: p.email } }) : null;
 
       if (candidate) {
         // Update the prospect to link to existing candidate
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
         results.push({ prospectId: p.id, name: p.name, candidateId: candidate.id });
       } else {
         // Create new candidate from prospect
-        candidate = await prisma.candidate.create({
+        candidate = await tenantPrisma.candidate.create({
           data: {
             name: p.name,
             email: p.email || `prospect-${p.id}@placeholder.local`,
@@ -81,11 +82,11 @@ export async function POST(req: Request) {
 
       // If a job is specified, create application
       if (jobId && candidate) {
-        const existingApp = await prisma.application.findFirst({
+        const existingApp = await tenantPrisma.application.findFirst({
           where: { candidateId: candidate.id, jobId },
         });
         if (!existingApp) {
-          await prisma.application.create({
+          await tenantPrisma.application.create({
             data: {
               candidateId: candidate.id,
               jobId,

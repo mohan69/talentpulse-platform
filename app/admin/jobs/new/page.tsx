@@ -1,11 +1,12 @@
 import { PageTitle } from "@/components/workspace/page-title";
 import { prisma } from "@/lib/db";
 import { NewJobForm } from "./new-job-form";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewJobPage() {
-  const clients = await prisma.client.findMany({
+  const clients = await tenantPrisma.client.findMany({
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +23,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.paymentStatus !== undefined) data.paymentStatus = body.paymentStatus || null;
   const updated = await prisma.offer.update({ where: { id: params.id }, data });
   if (body.status === "ACCEPTED") {
-    await prisma.application.update({ where: { id: updated.applicationId }, data: { stage: "OFFER_ACCEPTED" } });
+    await tenantPrisma.application.update({ where: { id: updated.applicationId }, data: { stage: "OFFER_ACCEPTED" } });
   }
   if (body.actualJoinedAt) {
-    await prisma.application.update({ where: { id: updated.applicationId }, data: { stage: "JOINED" } });
+    await tenantPrisma.application.update({ where: { id: updated.applicationId }, data: { stage: "JOINED" } });
   }
   await logActivity({ userId: user.id, entityType: "offer", entityId: updated.id, action: "updated" });
   return NextResponse.json(updated);

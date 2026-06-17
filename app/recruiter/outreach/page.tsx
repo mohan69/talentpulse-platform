@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PageTitle } from "@/components/workspace/page-title";
 import { OutreachClient } from "../../admin/outreach/outreach-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function RecruiterOutreach() {
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.candidate.findMany({
+    tenantPrisma.candidate.findMany({
       select: { id: true, name: true, email: true, currentCompany: true, currentDesignation: true },
       orderBy: { createdAt: "desc" },
       take: 200,

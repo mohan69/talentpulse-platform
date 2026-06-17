@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
 import { randomBytes } from "crypto";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -132,7 +133,7 @@ export async function POST(req: Request) {
     ? await prisma.prospect.findMany({ where: { email: { in: emails } }, select: { email: true } })
     : [];
   const existingCandidates = emails.length > 0
-    ? await prisma.candidate.findMany({ where: { email: { in: emails } }, select: { email: true } })
+    ? await tenantPrisma.candidate.findMany({ where: { email: { in: emails } }, select: { email: true } })
     : [];
   const existingEmails = new Set([
     ...existingProspects.map((p) => p.email?.toLowerCase()),

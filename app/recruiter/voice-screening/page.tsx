@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PageTitle } from "@/components/workspace/page-title";
 import { VoiceScreeningClient } from "../../admin/voice-screening/voice-screening-client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function RecruiterVoiceScreening() {
       take: 50,
     }),
     prisma.integrationSetting.findUnique({ where: { provider: "ELEVENLABS" } }).then((s) => s?.isActive ?? false),
-    prisma.application.findMany({
+    tenantPrisma.application.findMany({
       where: { stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] }, job: { recruiterId: userId } },
       include: {
         candidate: { select: { id: true, name: true, phone: true, email: true } },

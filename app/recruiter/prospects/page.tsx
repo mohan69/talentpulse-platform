@@ -6,9 +6,10 @@ import { ProspectsClient } from "@/components/workspace/prospects-client";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
+import { tenantPrisma } from "@/lib/repositories";
 
 export default async function RecruiterProspectsPage() {
-  const jobs = await prisma.job.findMany({
+  const jobs = await tenantPrisma.job.findMany({
     where: { status: "OPEN" },
     select: { id: true, title: true, client: { select: { name: true } } },
     orderBy: { title: "asc" },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { PipelineStage } from "@prisma/client";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -34,13 +35,13 @@ export async function GET(req: Request) {
       if (user.role === "RECRUITER") { jobWhere.recruiterId = user.id; appWhere.job = { ...appWhere.job, recruiterId: user.id }; }
 
       const [totalJobs, openJobs, totalCandidates, totalApplications, interviewsScheduled, offersExtended, joined] = await Promise.all([
-        prisma.job.count({ where: jobWhere }),
-        prisma.job.count({ where: { ...jobWhere, status: "OPEN" } }),
-        prisma.candidate.count({ where: hasDateFilter ? { createdAt: dateFilter } : {} }),
-        prisma.application.count({ where: appWhere }),
-        prisma.interview.count({ where: { ...(appWhere.job ? { application: appWhere } : {}), ...(hasDateFilter ? { scheduledAt: dateFilter } : {}) } }),
-        prisma.application.count({ where: { ...appWhere, stage: PipelineStage.OFFER_EXTENDED } }),
-        prisma.application.count({ where: { ...appWhere, stage: PipelineStage.JOINED } }),
+        tenantPrisma.job.count({ where: jobWhere }),
+        tenantPrisma.job.count({ where: { ...jobWhere, status: "OPEN" } }),
+        tenantPrisma.candidate.count({ where: hasDateFilter ? { createdAt: dateFilter } : {} }),
+        tenantPrisma.application.count({ where: appWhere }),
+        tenantPrisma.interview.count({ where: { ...(appWhere.job ? { application: appWhere } : {}), ...(hasDateFilter ? { scheduledAt: dateFilter } : {}) } }),
+        tenantPrisma.application.count({ where: { ...appWhere, stage: PipelineStage.OFFER_EXTENDED } }),
+        tenantPrisma.application.count({ where: { ...appWhere, stage: PipelineStage.JOINED } }),
       ]);
 
       return NextResponse.json({
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
       const clientWhere: any = {};
       if (clientId) clientWhere.id = clientId;
 
-      const clients = await prisma.client.findMany({
+      const clients = await tenantPrisma.client.findMany({
         where: clientWhere,
         include: {
           jobs: {
@@ -137,7 +138,7 @@ export async function GET(req: Request) {
       if (clientId) appWhere.job = { clientId };
       if (user.role === "RECRUITER") appWhere.job = { ...appWhere.job, recruiterId: user.id };
 
-      const apps = await prisma.application.findMany({
+      const apps = await tenantPrisma.application.findMany({
         where: appWhere,
         include: {
           candidate: { select: { name: true, email: true } },

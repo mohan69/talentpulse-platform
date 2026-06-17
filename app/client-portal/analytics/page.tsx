@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { PageTitle } from "@/components/workspace/page-title";
 import { StatCard } from "@/components/workspace/stat-card";
 import { Briefcase, Users, Calendar, CheckCircle } from "lucide-react";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,10 @@ export default async function ClientAnalytics() {
   const session = await getServerSession(authOptions);
   const clientId = (session?.user?.clientId ?? "");
   const [openJobs, apps, interviews, joined] = await Promise.all([
-    prisma.job.count({ where: { clientId, status: "OPEN" } }),
-    prisma.application.count({ where: { job: { clientId } } }),
-    prisma.interview.count({ where: { application: { job: { clientId } } } }),
-    prisma.application.count({ where: { job: { clientId }, stage: PipelineStage.JOINED } }),
+    tenantPrisma.job.count({ where: { clientId, status: "OPEN" } }),
+    tenantPrisma.application.count({ where: { job: { clientId } } }),
+    tenantPrisma.interview.count({ where: { application: { job: { clientId } } } }),
+    tenantPrisma.application.count({ where: { job: { clientId }, stage: PipelineStage.JOINED } }),
   ]);
   return (<><PageTitle title="Analytics" description="Performance metrics for your positions." />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

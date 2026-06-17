@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
     ];
   }
 
-  const jobs = await prisma.job.findMany({
+  const jobs = await tenantPrisma.job.findMany({
     where,
     include: {
       client: true,
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     if (user.role === "CLIENT") clientId = user.clientId;
     if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-    const job = await prisma.job.create({
+    const job = await tenantPrisma.job.create({
       data: {
         title: body.title,
         clientId,

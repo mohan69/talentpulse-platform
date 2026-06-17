@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { logActivity } from "@/lib/activity";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (body.stage === "SUBMITTED") data.submittedAt = new Date();
   }
   if (body.clientFeedback != null) data.clientFeedback = body.clientFeedback;
-  const updated = await prisma.application.update({ where: { id: params.id }, data });
+  const updated = await tenantPrisma.application.update({ where: { id: params.id }, data });
   await logActivity({
     userId: user.id,
     entityType: "application",

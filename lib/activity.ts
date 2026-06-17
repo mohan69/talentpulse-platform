@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { tenantPrisma } from "@/lib/repositories";
 
 export async function logActivity(params: {
   userId?: string | null;
@@ -8,7 +9,7 @@ export async function logActivity(params: {
   metadata?: any;
 }) {
   try {
-    await prisma.activityLog.create({
+    await tenantPrisma.activityLog.create({
       data: {
         userId: params.userId ?? null,
         entityType: params.entityType,

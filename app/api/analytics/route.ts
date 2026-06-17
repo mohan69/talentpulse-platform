@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
+import { tenantPrisma } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +30,17 @@ export async function GET(req: Request) {
     prospectsByStatus,
     totalProspects,
   ] = await Promise.all([
-    prisma.job.groupBy({ by: ["status"], _count: true, where: jobWhere }),
-    prisma.application.groupBy({ by: ["stage"], _count: true, where: appWhere }),
-    prisma.interview.count({ where: appWhere.job ? { application: appWhere } : {} }),
+    tenantPrisma.job.groupBy({ by: ["status"], _count: true, where: jobWhere }),
+    tenantPrisma.application.groupBy({ by: ["stage"], _count: true, where: appWhere }),
+    tenantPrisma.interview.count({ where: appWhere.job ? { application: appWhere } : {} }),
     prisma.offer.groupBy({ by: ["status"], _count: true, where: appWhere.job ? { application: appWhere } : {} }),
-    prisma.candidate.count(),
-    prisma.client.count(),
+    tenantPrisma.candidate.count(),
+    tenantPrisma.client.count(),
     prisma.prospect.groupBy({ by: ["status"], _count: true }),
     prisma.prospect.count(),
   ]);
 
-  const sourceStats = await prisma.candidate.groupBy({
+  const sourceStats = await tenantPrisma.candidate.groupBy({
     by: ["source"],
     _count: true,
   });
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
   // Monthly submissions trend (last 6 months)
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const recentApps = await prisma.application.findMany({
+  const recentApps = await tenantPrisma.application.findMany({
     where: { ...appWhere, createdAt: { gte: sixMonthsAgo } },
     select: { createdAt: true, stage: true },
   });
