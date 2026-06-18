@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,8 +96,16 @@ export function WorkspaceShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [navigatingHref, setNavigatingHref] = useState<string | null>(null);
   const nav = NAV_BY_ROLE[role] ?? [];
+  const displayName = session?.user?.name ?? userName;
+  const displayEmail = session?.user?.email ?? userEmail;
+
+  useEffect(() => {
+    setNavigatingHref(null);
+  }, [pathname]);
 
   async function handleSignOut() {
     await signOut({ redirect: false });
@@ -129,7 +137,12 @@ export function WorkspaceShell({
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setMobileOpen(false)}
+                onMouseEnter={() => router.prefetch(item.href)}
+                onFocus={() => router.prefetch(item.href)}
+                onClick={() => {
+                  setMobileOpen(false);
+                  if (pathname !== item.href) setNavigatingHref(item.href);
+                }}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
                   active
@@ -148,6 +161,11 @@ export function WorkspaceShell({
       {/* Main */}
       <div className="lg:pl-64">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border/40 h-16 flex items-center px-4 lg:px-8 gap-4">
+          {navigatingHref && (
+            <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-primary/10">
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+            </div>
+          )}
           <button className="lg:hidden" onClick={() => setMobileOpen(true)}>
             <Menu className="h-5 w-5" />
           </button>
@@ -159,19 +177,19 @@ export function WorkspaceShell({
               <button className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-accent transition-colors">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-                    {initials(userName)}
+                    {initials(displayName)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="text-left hidden sm:block">
-                  <div className="text-sm font-medium">{userName}</div>
+                  <div className="text-sm font-medium">{displayName}</div>
                   <div className="text-xs text-muted-foreground capitalize">{role.toLowerCase()}</div>
                 </div>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
-                <div>{userName}</div>
-                <div className="text-xs font-normal text-muted-foreground">{userEmail}</div>
+                <div>{displayName}</div>
+                <div className="text-xs font-normal text-muted-foreground">{displayEmail}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut}>

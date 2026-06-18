@@ -1,17 +1,18 @@
-import { prisma } from "@/lib/db";
 import { PipelineStage } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { PageTitle } from "@/components/workspace/page-title";
 import { StatCard } from "@/components/workspace/stat-card";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { Briefcase, Users, Calendar, Target, UserSearch } from "lucide-react";
 import Link from "next/link";
 import { tenantPrisma } from "@/lib/repositories";
+import { unstable_noStore as noStore } from "next/cache";
+import { RecruiterGreeting } from "./recruiter-greeting";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecruiterDashboard() {
+  noStore();
   const session = await getServerSession(authOptions);
   const uid = session?.user?.id ?? "";
   const [myJobs, myApps, myInterviews, myProspects, recent] = await Promise.all([
@@ -19,12 +20,24 @@ export default async function RecruiterDashboard() {
     tenantPrisma.application.count({ where: { job: { recruiterId: uid }, stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
     tenantPrisma.interview.count({ where: { application: { job: { recruiterId: uid } }, status: "SCHEDULED" } }),
     tenantPrisma.prospect.count({ where: { ownerId: uid, status: { not: "CONVERTED" } } }),
-    tenantPrisma.application.findMany({ where: { job: { recruiterId: uid } }, orderBy: { updatedAt: "desc" }, take: 10, include: { candidate: true, job: true } }),
+    tenantPrisma.application.findMany({
+      where: { job: { recruiterId: uid } },
+      orderBy: { updatedAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        candidateId: true,
+        matchScore: true,
+        stage: true,
+        candidate: { select: { name: true } },
+        job: { select: { title: true } },
+      },
+    }),
   ]);
 
   return (
     <>
-      <PageTitle title={`Hi ${session?.user?.name?.split(" ")[0] ?? "there"}👋`} description="Your active work and priorities." />
+      <RecruiterGreeting initialName={session?.user?.name} />
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard label="Open Jobs" value={myJobs} icon={Briefcase} color="primary" />
         <StatCard label="Active Pipeline" value={myApps} icon={Users} color="cyan" />

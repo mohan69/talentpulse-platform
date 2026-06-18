@@ -1,24 +1,44 @@
-import { prisma } from "@/lib/db";
 import { PipelineStage } from "@prisma/client";
 import { PageTitle } from "@/components/workspace/page-title";
 import { StatCard } from "@/components/workspace/stat-card";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { Briefcase, Users, Calendar, TrendingUp, CheckCircle2, UserSearch } from "lucide-react";
 import Link from "next/link";
-import { formatDate, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { tenantPrisma } from "@/lib/repositories";
+import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboard() {
+  noStore();
   const [openJobs, totalCandidates, totalProspects, activeApps, scheduledInterviews, recentApps, recentActivity] = await Promise.all([
     tenantPrisma.job.count({ where: { status: "OPEN" } }),
     tenantPrisma.candidate.count(),
     tenantPrisma.prospect.count({ where: { status: { not: "CONVERTED" } } }),
     tenantPrisma.application.count({ where: { stage: { notIn: [PipelineStage.REJECTED, PipelineStage.JOINED] } } }),
     tenantPrisma.interview.count({ where: { status: "SCHEDULED" } }),
-    tenantPrisma.application.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { candidate: true, job: true } }),
-    tenantPrisma.activityLog.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { user: true } }),
+    tenantPrisma.application.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        candidateId: true,
+        stage: true,
+        candidate: { select: { name: true } },
+        job: { select: { title: true } },
+      },
+    }),
+    tenantPrisma.activityLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        action: true,
+        createdAt: true,
+        user: { select: { name: true } },
+      },
+    }),
   ]);
 
   return (
