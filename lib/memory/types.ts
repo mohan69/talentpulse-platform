@@ -41,6 +41,8 @@ export type CanonicalAction =
   | "requirement_changed"
   | "summary_updated"
   | "action_completed"
+  | "screening_confirmed"
+  | "risk_dismissed"
   | "prospect_converted"
   | "call_outcome";
 

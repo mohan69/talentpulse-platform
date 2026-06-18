@@ -70,5 +70,6 @@ export const config = {
     "/api/company-profile/:path*",
     "/api/memory/:path*",
     "/api/conversations/:path*",
+    "/api/screening/:path*",
   ],
 };
