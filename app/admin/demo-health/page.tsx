@@ -27,6 +27,13 @@ type CountSummary = {
   admins: number;
 };
 
+type DemoSample = {
+  applicationId: string;
+  candidateId: string;
+  jobId: string;
+  jobTitle: string;
+} | null;
+
 function statusLabel(status: HealthStatus) {
   if (status === "healthy") return "Healthy";
   if (status === "warning") return "Warning";
@@ -76,18 +83,34 @@ function getCookieHeader() {
     .join("; ");
 }
 
-async function validateEndpoint(path: string, sampleApplicationId?: string | null): Promise<HealthItem> {
-  if (path.includes("applicationId=") && !sampleApplicationId) {
+async function validateEndpoint({
+  label,
+  path,
+  sample,
+  requiresSample = false,
+}: {
+  label: string;
+  path: string;
+  sample?: DemoSample;
+  requiresSample?: boolean;
+}): Promise<HealthItem> {
+  if (requiresSample && !sample) {
     return {
-      label: path.split("?")[0],
+      label,
       status: "warning",
-      detail: "No application sample available",
+      detail: "No active job/application sample available",
     };
   }
 
-  const resolvedPath = sampleApplicationId ? path.replace("__APPLICATION_ID__", sampleApplicationId) : path;
+  const resolvedPath = sample
+    ? path
+        .replace("__APPLICATION_ID__", encodeURIComponent(sample.applicationId))
+        .replace("__CANDIDATE_ID__", encodeURIComponent(sample.candidateId))
+        .replace("__JOB_ID__", encodeURIComponent(sample.jobId))
+    : path;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeoutMs = 12000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${getBaseUrl()}${resolvedPath}`, {
@@ -96,18 +119,35 @@ async function validateEndpoint(path: string, sampleApplicationId?: string | nul
       signal: controller.signal,
     });
     clearTimeout(timeout);
+    const body = await response.json().catch(() => null);
+    const errorMessage = typeof body?.error === "string" ? body.error : null;
+
+    if (response.ok) {
+      return {
+        label,
+        status: "healthy",
+        detail: `HTTP ${response.status}`,
+      };
+    }
+
+    const parameterIssue =
+      response.status === 400 ||
+      response.status === 404 ||
+      errorMessage?.toLowerCase().includes("required") ||
+      errorMessage?.toLowerCase().includes("not found");
 
     return {
-      label: resolvedPath.split("?")[0],
-      status: response.ok ? "healthy" : response.status < 500 ? "warning" : "failed",
-      detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}`,
+      label,
+      status: response.status < 500 || parameterIssue ? "warning" : "failed",
+      detail: errorMessage ? `HTTP ${response.status}: ${errorMessage}` : `HTTP ${response.status}`,
     };
   } catch (error) {
     clearTimeout(timeout);
+    const timedOut = error instanceof Error && error.name === "AbortError";
     return {
-      label: resolvedPath.split("?")[0],
-      status: "failed",
-      detail: error instanceof Error && error.name === "AbortError" ? "Timed out" : "Request failed",
+      label,
+      status: timedOut ? "warning" : "failed",
+      detail: timedOut ? `Timed out after ${timeoutMs / 1000}s` : "Request failed",
     };
   }
 }
@@ -127,15 +167,57 @@ async function loadHealthData() {
 
   try {
     await prisma.$queryRaw`select 1`;
-    const [organizations, recruiters, admins, jobs, candidates, applications, sampleApplication] = await Promise.all([
+    const [organizations, recruiters, admins, jobs, candidates, applications, activeJobSample] = await Promise.all([
       prisma.organization.count({ where: { status: "ACTIVE" } }),
       prisma.user.count({ where: { role: "RECRUITER", isActive: true } }),
       prisma.user.count({ where: { role: "ADMIN", isActive: true } }),
       prisma.job.count(),
       prisma.candidate.count(),
       prisma.application.count(),
-      prisma.application.findFirst({ select: { id: true }, orderBy: { updatedAt: "desc" } }),
+      prisma.job.findFirst({
+        where: { status: "OPEN", applications: { some: {} } },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          applications: {
+            orderBy: { updatedAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              candidateId: true,
+              jobId: true,
+            },
+          },
+        },
+      }),
     ]);
+    const fallbackApplication = activeJobSample?.applications[0]
+      ? null
+      : await prisma.application.findFirst({
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            candidateId: true,
+            jobId: true,
+            job: { select: { title: true } },
+          },
+        });
+    const demoSample: DemoSample = activeJobSample?.applications[0]
+      ? {
+          applicationId: activeJobSample.applications[0].id,
+          candidateId: activeJobSample.applications[0].candidateId,
+          jobId: activeJobSample.id,
+          jobTitle: activeJobSample.title,
+        }
+      : fallbackApplication
+        ? {
+            applicationId: fallbackApplication.id,
+            candidateId: fallbackApplication.candidateId,
+            jobId: fallbackApplication.jobId,
+            jobTitle: fallbackApplication.job.title,
+          }
+        : null;
 
     const counts: CountSummary = { organizations, recruiters, admins, jobs, candidates, applications };
     const systemItems: HealthItem[] = [
@@ -150,10 +232,26 @@ async function loadHealthData() {
     ];
     const environmentItems = ["DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "OPENAI_API_KEY", "OPENROUTER_API_KEY"].map(envItem);
     const endpointItems = await Promise.all([
-      validateEndpoint("/api/screening/workbench?applicationId=__APPLICATION_ID__&summaryOnly=true", sampleApplication?.id),
-      validateEndpoint("/api/submission/tracker?applicationId=__APPLICATION_ID__", sampleApplication?.id),
-      validateEndpoint("/api/revenue/leaderboard"),
-      validateEndpoint("/api/revenue/productivity"),
+      validateEndpoint({
+        label: "/api/screening/workbench",
+        path: "/api/screening/workbench?applicationId=__APPLICATION_ID__&candidateId=__CANDIDATE_ID__&jobId=__JOB_ID__&summaryOnly=true",
+        sample: demoSample,
+        requiresSample: true,
+      }),
+      validateEndpoint({
+        label: "/api/submission/tracker",
+        path: "/api/submission/tracker?applicationId=__APPLICATION_ID__&candidateId=__CANDIDATE_ID__&jobId=__JOB_ID__",
+        sample: demoSample,
+        requiresSample: true,
+      }),
+      validateEndpoint({
+        label: "/api/revenue/leaderboard",
+        path: "/api/revenue/leaderboard",
+      }),
+      validateEndpoint({
+        label: "/api/revenue/productivity",
+        path: "/api/revenue/productivity",
+      }),
     ]);
 
     return {
