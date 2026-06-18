@@ -37,6 +37,7 @@ import {
   FileBarChart,
   Bot,
   Radar,
+  BrainCircuit,
 } from "lucide-react";
 import { initials } from "@/lib/format";
 import { GlobalSearch } from "@/components/workspace/global-search";
@@ -49,6 +50,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { href: "/admin/jobs", label: "Requisitions", icon: Briefcase },
     { href: "/admin/candidates", label: "Talent Repository", icon: Users },
     { href: "/admin/sourcing-intelligence", label: "Sourcing Intelligence", icon: Radar },
+    { href: "/admin/intelligence", label: "Intelligence Workbench", icon: BrainCircuit },
     { href: "/admin/pipeline", label: "Pipeline", icon: KanbanSquare },
     { href: "/admin/interviews", label: "Interviews", icon: Calendar },
     { href: "/admin/outreach", label: "Outreach", icon: Send },
