@@ -71,5 +71,6 @@ export const config = {
     "/api/memory/:path*",
     "/api/conversations/:path*",
     "/api/screening/:path*",
+    "/api/submission/:path*",
   ],
 };
