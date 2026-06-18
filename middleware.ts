@@ -72,5 +72,6 @@ export const config = {
     "/api/conversations/:path*",
     "/api/screening/:path*",
     "/api/submission/:path*",
+    "/api/revenue/:path*",
   ],
 };
