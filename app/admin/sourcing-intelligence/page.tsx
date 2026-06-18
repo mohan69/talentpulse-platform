@@ -1,38 +1,69 @@
 import { PageTitle } from "@/components/workspace/page-title";
-import { Radar, Sparkles } from "lucide-react";
+import { tenantPrisma } from "@/lib/repositories";
+import { SourcingIntelligenceClient, type SourcingCandidate } from "./sourcing-intelligence-client";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminSourcingIntelligence() {
+async function loadCandidates(): Promise<{ candidates: SourcingCandidate[]; error?: string }> {
+  try {
+    const candidates = await tenantPrisma.candidate.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 150,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        currentCity: true,
+        preferredLocations: true,
+        willRelocate: true,
+        currentCompany: true,
+        currentDesignation: true,
+        totalExperience: true,
+        relevantExperience: true,
+        skills: true,
+        source: true,
+        aiSummary: true,
+        applications: {
+          orderBy: { updatedAt: "desc" },
+          take: 6,
+          select: {
+            id: true,
+            stage: true,
+            matchScore: true,
+            job: {
+              select: {
+                id: true,
+                title: true,
+                location: true,
+                skills: true,
+                client: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return { candidates: candidates as SourcingCandidate[] };
+  } catch (error) {
+    return {
+      candidates: [],
+      error: error instanceof Error ? error.message : "Unable to load candidate repository.",
+    };
+  }
+}
+
+export default async function AdminSourcingIntelligence() {
+  const { candidates, error } = await loadCandidates();
+
   return (
     <>
       <PageTitle
         title="Sourcing Intelligence"
-        description="AI-powered multi-source candidate discovery and talent intelligence."
+        description="Search the Talent Repository with natural language and explainable deterministic matching."
       />
-      <div className="rounded-xl bg-card shadow-sm p-12 flex flex-col items-center justify-center text-center">
-        <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-6">
-          <Radar className="h-8 w-8" />
-        </div>
-        <h2 className="font-display text-2xl font-bold tracking-tight mb-2">Coming Soon — Phase 2</h2>
-        <p className="text-muted-foreground max-w-md leading-relaxed mb-6">
-          Sourcing Intelligence will unify multi-source candidate discovery, natural language intent parsing,
-          and AI-powered enrichment into one seamless workflow.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-xl">
-          {[
-            { label: "Multi-Source Search", desc: "GitHub, Google CSE, internal DB, and more from one query" },
-            { label: "Intent Parsing", desc: "Natural language queries automatically extract skills, location, seniority" },
-            { label: "AI Enrichment", desc: "Auto-score candidates for fit, stability, and response likelihood" },
-          ].map((f) => (
-            <div key={f.label} className="rounded-lg bg-muted/50 p-4 text-left">
-              <Sparkles className="h-4 w-4 text-primary mb-2" />
-              <div className="font-medium text-sm mb-1">{f.label}</div>
-              <div className="text-xs text-muted-foreground">{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <SourcingIntelligenceClient candidates={candidates} loadError={error} />
     </>
   );
 }

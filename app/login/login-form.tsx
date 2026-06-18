@@ -91,10 +91,10 @@ export function LoginForm() {
         <div className="text-xs font-medium text-muted-foreground mb-3">QUICK-LOGIN DEMO ACCOUNTS</div>
         <div className="grid grid-cols-2 gap-2">
           {[
-            { label: "Admin", email: "john.sagayaraj@careerpathsindia.com", pass: "john123" },
-            { label: "Recruiter", email: "priya@careerpathsindia.com", pass: "recruiter123" },
+            { label: "Admin", email: "admin@talentpulse.demo", pass: "demo123" },
+            { label: "Recruiter Priya", email: "recruiter1@talentpulse.demo", pass: "demo123" },
+            { label: "Recruiter Arun", email: "recruiter2@talentpulse.demo", pass: "demo123" },
             { label: "Client (Barclays)", email: "hr@barclays.com", pass: "client123" },
-            { label: "Candidate", email: "rahul.kumar@example.com", pass: "candidate123" },
           ].map((a) => (
             <button
               key={a.email}
