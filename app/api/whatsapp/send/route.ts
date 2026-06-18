@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
 import { captureMemory } from "@/lib/memory/service";
 import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
+import { captureConversationMemory, getConversationId } from "@/lib/conversation/capture";
+import { extractInsightsFromNote } from "@/lib/conversation/note-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,8 @@ export async function POST(req: Request) {
     },
   });
 
+  const conversationId = candidateId ? getConversationId(candidateId, "whatsapp") : undefined;
+  const insights = extractInsightsFromNote(messageBody ?? "", "whatsapp_message");
   captureMemory({
     userId: user.id,
     entityType: "whatsapp",
@@ -47,8 +51,30 @@ export async function POST(req: Request) {
       tags: [...deriveTagsFromEntityType("whatsapp"), ...deriveTagsFromAction("message_sent")],
       confidence: "auto",
       importance: "low",
+      conversationId,
+      channel: "whatsapp",
+      direction: "outbound",
+      extractedInsights: insights,
+      newValue: candidateId ? { candidateId } : undefined,
     },
   });
+  if (candidateId) {
+    await captureConversationMemory({
+      userId: user.id,
+      candidateId,
+      entityType: "whatsapp",
+      entityId: message.id,
+      action: "message_sent",
+      channel: "whatsapp",
+      sourceModel: "whatsAppMessage",
+      sourceId: message.id,
+      text: messageBody ?? "",
+      summary: `Insights from WhatsApp: ${insights.length} signal${insights.length === 1 ? "" : "s"} found`,
+      direction: "outbound",
+      insights,
+      conversationId,
+    });
+  }
 
   // TODO: Actual WhatsApp Business API call here
   return NextResponse.json(message);

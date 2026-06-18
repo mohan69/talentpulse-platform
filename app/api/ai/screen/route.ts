@@ -3,6 +3,9 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { computeHeuristicScore } from "@/lib/ai-screening";
 import { tenantPrisma } from "@/lib/repositories";
+import { resolveTenantContext } from "@/lib/tenant/context";
+import { captureConversationMemory, getConversationId } from "@/lib/conversation/capture";
+import { extractInsightsFromScreening } from "@/lib/conversation/screening-insights";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,6 +13,8 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await resolveTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json();
   const { applicationId } = body ?? {};
   if (!applicationId) return NextResponse.json({ error: "applicationId required" }, { status: 400 });
@@ -100,6 +105,22 @@ Scores 0-100. Respond with raw JSON only.`;
               stage: app.stage === "NEW" ? "AI_SCREENING" : app.stage,
             },
           });
+          await captureConversationMemory({
+            ctx,
+            userId: user.id,
+            candidateId: app.candidateId,
+            entityType: "application",
+            entityId: applicationId,
+            action: "match_scored",
+            channel: "screening",
+            sourceModel: "application",
+            sourceId: applicationId,
+            text: JSON.stringify({ heuristic }),
+            summary: `AI screening heuristic score: ${heuristic.matchScore}/100`,
+            direction: "internal",
+            insights: extractInsightsFromScreening({ score: heuristic.matchScore, report: { heuristic } }),
+            conversationId: getConversationId(app.candidateId, "screening"),
+          });
           controller.close();
           return;
         }
@@ -132,6 +153,25 @@ Scores 0-100. Respond with raw JSON only.`;
                   stage: app.stage === "NEW" ? "AI_SCREENING" : app.stage,
                 },
               });
+              await captureConversationMemory({
+                ctx,
+                userId: user.id,
+                candidateId: app.candidateId,
+                entityType: "application",
+                entityId: applicationId,
+                action: "match_scored",
+                channel: "screening",
+                sourceModel: "application",
+                sourceId: applicationId,
+                text: JSON.stringify(report),
+                summary: `AI screening completed: ${parsed?.matchScore ?? heuristic.matchScore}/100`,
+                direction: "internal",
+                insights: extractInsightsFromScreening({
+                  score: parsed?.matchScore ?? heuristic.matchScore,
+                  report,
+                }),
+                conversationId: getConversationId(app.candidateId, "screening"),
+              });
               if (parsed?.executiveSummary) {
                 await tenantPrisma.candidate.update({
                   where: { id: app.candidateId },
@@ -163,6 +203,25 @@ Scores 0-100. Respond with raw JSON only.`;
             aiReport: report as any,
             stage: app.stage === "NEW" ? "AI_SCREENING" : app.stage,
           },
+        });
+        await captureConversationMemory({
+          ctx,
+          userId: user.id,
+          candidateId: app.candidateId,
+          entityType: "application",
+          entityId: applicationId,
+          action: "match_scored",
+          channel: "screening",
+          sourceModel: "application",
+          sourceId: applicationId,
+          text: JSON.stringify(report),
+          summary: `AI screening completed: ${parsed?.matchScore ?? heuristic.matchScore}/100`,
+          direction: "internal",
+          insights: extractInsightsFromScreening({
+            score: parsed?.matchScore ?? heuristic.matchScore,
+            report,
+          }),
+          conversationId: getConversationId(app.candidateId, "screening"),
         });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "completed", result: report })}\n\n`));
         controller.close();

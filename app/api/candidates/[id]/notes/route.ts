@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
 import { captureMemory } from "@/lib/memory/service";
 import { extractTags, deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
+import { captureConversationMemory, getConversationId } from "@/lib/conversation/capture";
+import { extractInsightsFromNote } from "@/lib/conversation/note-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     include: { author: { select: { id: true, name: true } } },
   });
   const tags = [...deriveTagsFromEntityType("note"), ...deriveTagsFromAction("note_added"), ...extractTags(body.body ?? "")];
+  const conversationId = getConversationId(params.id, "note");
+  const insights = extractInsightsFromNote(body.body ?? "");
   captureMemory({
     userId: user.id,
     entityType: "note",
@@ -37,7 +40,27 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       tags,
       confidence: "auto",
       importance: "medium",
+      conversationId,
+      channel: "note",
+      direction: "internal",
+      extractedInsights: insights,
+      newValue: { candidateId: params.id },
     },
+  });
+  await captureConversationMemory({
+    userId: user.id,
+    candidateId: params.id,
+    entityType: "note",
+    entityId: note.id,
+    action: "note_added",
+    channel: "note",
+    sourceModel: "note",
+    sourceId: note.id,
+    text: body.body ?? "",
+    summary: `Insights from note: ${insights.length} signal${insights.length === 1 ? "" : "s"} found`,
+    direction: "internal",
+    insights,
+    conversationId,
   });
   return NextResponse.json(note);
 }

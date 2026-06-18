@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/guards";
 import { tenantPrisma } from "@/lib/repositories";
+import { resolveTenantContext } from "@/lib/tenant/context";
+import { captureConversationMemory, getConversationId } from "@/lib/conversation/capture";
+import { extractInsightsFromTranscript } from "@/lib/conversation/voice-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +16,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await resolveTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { screeningId } = await req.json();
   if (!screeningId) {
@@ -132,6 +137,25 @@ export async function POST(req: Request) {
         where: { id: screeningId },
         data: updateData,
       });
+      if (screening.candidateId) {
+        const insights = extractInsightsFromTranscript(transcriptText, fullSummary, overallScore, scoreBreakdown);
+        await captureConversationMemory({
+          ctx,
+          userId: user.id,
+          candidateId: screening.candidateId,
+          entityType: "voiceScreening",
+          entityId: screeningId,
+          action: "screening_completed",
+          channel: "voice",
+          sourceModel: "voiceScreening",
+          sourceId: screeningId,
+          text: [transcriptText, fullSummary].filter(Boolean).join("\n\n"),
+          summary: `Voice transcript fetched${overallScore != null ? ` (Score: ${overallScore}/100)` : ""}`,
+          direction: "inbound",
+          insights,
+          conversationId: getConversationId(screening.candidateId, "voice"),
+        });
+      }
       console.log("[FetchTranscript] Updated screening:", screeningId, Object.keys(updateData));
       return NextResponse.json({
         success: true,

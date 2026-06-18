@@ -5,6 +5,8 @@ import { resolveRecordTenantContext, resolveRecordTenantContextByWhere } from "@
 import { captureMemoryWithContext } from "@/lib/memory/service";
 import { deriveTagsFromEntityType, deriveTagsFromAction } from "@/lib/memory/tags";
 import type { TenantContext } from "@/lib/tenant/context";
+import { captureConversationMemory, getConversationId } from "@/lib/conversation/capture";
+import { extractInsightsFromTranscript } from "@/lib/conversation/voice-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +115,7 @@ async function fetchElevenLabsConversation(
     id: string;
     conversationId: string | null;
     phoneNumber: string;
+    candidateId?: string | null;
   },
   apiKeyOverride?: string,
   tenantContext?: TenantContext | null,
@@ -256,6 +259,26 @@ async function fetchElevenLabsConversation(
         data: updateData,
       });
       console.log("[VoiceScreening] Updated screening with ElevenLabs data:", screening.id, Object.keys(updateData));
+      const candidateId = screening.candidateId ?? tenantContext?.candidateId ?? null;
+      if (tenantContext && candidateId) {
+        const insights = extractInsightsFromTranscript(transcriptText, fullSummary, overallScore, scoreBreakdown);
+        await captureConversationMemory({
+          ctx: tenantContext,
+          userId: null,
+          candidateId,
+          entityType: "voiceScreening",
+          entityId: screening.id,
+          action: "screening_completed",
+          channel: "voice",
+          sourceModel: "voiceScreening",
+          sourceId: screening.id,
+          text: [transcriptText, fullSummary].filter(Boolean).join("\n\n"),
+          summary: `Voice transcript captured${overallScore != null ? ` (Score: ${overallScore}/100)` : ""}`,
+          direction: "inbound",
+          insights,
+          conversationId: getConversationId(candidateId, "voice"),
+        });
+      }
     }
   } catch (e: any) {
     console.error("[VoiceScreening] Error fetching ElevenLabs conversation:", e.message);
@@ -339,6 +362,10 @@ export async function POST(req: Request) {
                 tags: [...deriveTagsFromEntityType("voiceScreening"), ...deriveTagsFromAction("screening_completed")],
                 confidence: "auto",
                 importance: "medium",
+                conversationId: getConversationId(screening.candidateId, "voice"),
+                channel: "voice",
+                direction: "inbound",
+                newValue: { candidateId: screening.candidateId },
               },
             });
             // Don't await — fire and forget so the callback response isn't delayed
@@ -396,6 +423,8 @@ export async function POST(req: Request) {
       },
     });
 
+    const candidateId = existing.candidateId ?? tenantContext.candidateId ?? null;
+    const insights = extractInsightsFromTranscript(transcript ?? "", summary ?? "", score != null ? Number(score) : null, scoreBreakdown ?? null);
     captureMemoryWithContext(tenantContext, {
       userId: null,
       entityType: "voiceScreening",
@@ -410,8 +439,31 @@ export async function POST(req: Request) {
         tags: [...deriveTagsFromEntityType("voiceScreening"), ...deriveTagsFromAction("screening_completed")],
         confidence: "auto",
         importance: updated.aiScore != null && updated.aiScore >= 80 ? "high" : "medium",
+        conversationId: candidateId ? getConversationId(candidateId, "voice") : undefined,
+        channel: "voice",
+        direction: "inbound",
+        extractedInsights: insights,
+        newValue: candidateId ? { candidateId } : undefined,
       },
     });
+    if (candidateId) {
+      await captureConversationMemory({
+        ctx: tenantContext,
+        userId: null,
+        candidateId,
+        entityType: "voiceScreening",
+        entityId: screeningId,
+        action: "screening_completed",
+        channel: "voice",
+        sourceModel: "voiceScreening",
+        sourceId: screeningId,
+        text: [transcript, summary].filter(Boolean).join("\n\n"),
+        summary: `Voice screening insights: ${insights.length} signal${insights.length === 1 ? "" : "s"} found`,
+        direction: "inbound",
+        insights,
+        conversationId: getConversationId(candidateId, "voice"),
+      });
+    }
 
     return NextResponse.json({ success: true, id: updated.id });
   } catch (e: any) {

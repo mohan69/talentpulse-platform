@@ -61,6 +61,15 @@ export interface MemoryMetadata {
   newValue?: any;
   sentiment?: MemorySentiment | null;
   importance?: MemoryImportance | null;
+  conversationId?: string | null;
+  channel?: "voice" | "whatsapp" | "email" | "note" | "screening" | null;
+  direction?: "inbound" | "outbound" | "internal" | null;
+  extractedInsights?: any[];
+  followUpTasks?: any[];
+  sourceText?: string | null;
+  sourceCreatedAt?: string | null;
+  insightType?: string | null;
+  insightValue?: string | null;
 }
 
 export interface MemoryEntry {
