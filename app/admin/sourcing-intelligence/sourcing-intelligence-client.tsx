@@ -189,6 +189,9 @@ const recruiterActions = [
   "Verify Notice",
   "Request Updated Resume",
   "Submit To Client",
+  "Schedule Interview",
+  "Generate Submission Package",
+  "Move To Offer Stage",
   "Keep Warm",
   "Archive",
 ];
@@ -768,6 +771,30 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
     URL.revokeObjectURL(url);
   }
 
+  async function runRecruiterAction(result: ScoredCandidate, action: string) {
+    const applicationId = result.candidate.applications[0]?.id;
+    if (action === "Generate Submission Package") {
+      const url = applicationId
+        ? `/admin/submission-intelligence/package?applicationId=${applicationId}`
+        : `/admin/submission-intelligence/package?candidateId=${result.candidate.id}`;
+      window.open(url, "_blank");
+      return;
+    }
+    setActionMessage(`${result.candidate.name}: ${action} in progress...`);
+    const response = await fetch("/api/recruiter-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        applicationId,
+        candidateId: result.candidate.id,
+        source: "sourcing-command-center",
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    setActionMessage(response.ok ? body.message : body.error ?? "Action failed");
+  }
+
   if (loadError) {
     return <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-6 text-rose-700"><div className="font-semibold">Unable to load Talent Repository data</div><p className="mt-2 text-sm">{loadError}</p></div>;
   }
@@ -812,6 +839,7 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
             setSelected={setSelected}
             actionMessage={actionMessage}
             setActionMessage={setActionMessage}
+            runRecruiterAction={runRecruiterAction}
           />
           <ShortlistWorkbench
             shortlisted={shortlisted}
@@ -918,6 +946,7 @@ function DiscoveryWorkbench(props: {
   setSelected: (value: ScoredCandidate) => void;
   actionMessage: string | null;
   setActionMessage: (value: string | null) => void;
+  runRecruiterAction: (result: ScoredCandidate, action: string) => void;
 }) {
   return (
     <section className="grid gap-6 xl:grid-cols-[310px_1fr_320px]">
@@ -948,7 +977,7 @@ function DiscoveryWorkbench(props: {
               onOpen={() => props.setSelected(result)}
               onShortlist={() => props.toggleShortlist(result.candidate.id)}
               onCompare={() => props.toggleCompare(result.candidate.id)}
-              onAction={(message) => props.setActionMessage(message)}
+              onAction={(action) => props.runRecruiterAction(result, action)}
             />
           ))}
           {props.results.length === 0 && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No candidates match the current query and filters.</div>}
@@ -1024,7 +1053,7 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
   onOpen: () => void;
   onShortlist: () => void;
   onCompare: () => void;
-  onAction: (message: string) => void;
+  onAction: (action: string) => void;
 }) {
   const candidate = result.candidate;
   const stage = latestStage(candidate);
@@ -1071,7 +1100,7 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
                 key={action}
                 size="sm"
                 variant={action === result.nextBestAction ? "default" : action === "Archive" ? "ghost" : "outline"}
-                onClick={() => onAction(`${candidate.name}: ${action} queued from Sourcing Command Center.`)}
+                onClick={() => onAction(action)}
               >
                 {action === "Archive" && <Archive className="h-4 w-4" />}
                 {action}
@@ -1110,6 +1139,13 @@ function ShortlistWorkbench({ shortlisted, compared, compareIds, toggleShortlist
   exportShortlist: () => void;
   setActionMessage: (value: string | null) => void;
 }) {
+  function packageUrl(result: ScoredCandidate) {
+    const applicationId = result.candidate.applications[0]?.id;
+    return applicationId
+      ? `/admin/submission-intelligence/package?applicationId=${applicationId}`
+      : `/admin/submission-intelligence/package?candidateId=${result.candidate.id}`;
+  }
+
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1135,6 +1171,7 @@ function ShortlistWorkbench({ shortlisted, compared, compareIds, toggleShortlist
             </div>
             <div className="mt-3 flex gap-2">
               <Button size="sm" variant="outline" onClick={() => toggleCompare(result.candidate.id)}>{compareIds.includes(result.candidate.id) ? "Uncompare" : "Compare"}</Button>
+              <Button size="sm" variant="outline" onClick={() => window.open(packageUrl(result), "_blank")}>Generate Package</Button>
               <Button size="sm" variant="ghost" onClick={() => toggleShortlist(result.candidate.id)}>Remove</Button>
             </div>
           </div>

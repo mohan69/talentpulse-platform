@@ -38,7 +38,11 @@ import {
   Bot,
   Radar,
   BrainCircuit,
+  Building2,
   HeartPulse,
+  ClipboardCheck,
+  DollarSign,
+  UploadCloud,
 } from "lucide-react";
 import { initials } from "@/lib/format";
 import { GlobalSearch } from "@/components/workspace/global-search";
@@ -51,7 +55,12 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { href: "/admin/jobs", label: "Requisitions", icon: Briefcase },
     { href: "/admin/candidates", label: "Talent Repository", icon: Users },
     { href: "/admin/sourcing-intelligence", label: "Sourcing Intelligence", icon: Radar },
+    { href: "/admin/client-intelligence", label: "Client Intelligence", icon: Building2 },
+    { href: "/admin/submission-intelligence", label: "Submission Intelligence", icon: ClipboardCheck },
+    { href: "/admin/revenue-intelligence", label: "Revenue Intelligence", icon: DollarSign },
     { href: "/admin/intelligence", label: "Intelligence Workbench", icon: BrainCircuit },
+    { href: "/admin/executive-insights", label: "Executive Insights", icon: BarChart3 },
+    { href: "/admin/resume-intelligence", label: "Resume Intelligence", icon: UploadCloud },
     { href: "/admin/demo-health", label: "Demo Health", icon: HeartPulse },
     { href: "/admin/pipeline", label: "Pipeline", icon: KanbanSquare },
     { href: "/admin/interviews", label: "Interviews", icon: Calendar },
@@ -134,7 +143,8 @@ export function WorkspaceShell({
 
         <nav className="p-3 space-y-0.5 text-sm overflow-y-auto max-h-[calc(100vh-4rem)]">
           {nav.map((item) => {
-            const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+            const isRoleRoot = ["/admin", "/recruiter", "/client-portal", "/candidate-portal"].includes(item.href);
+            const active = pathname === item.href || (!isRoleRoot && pathname?.startsWith(item.href + "/"));
             return (
               <Link
                 key={item.href}
