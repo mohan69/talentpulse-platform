@@ -62,6 +62,7 @@ function candidateSource(value: unknown): CandidateSource {
   const raw = clean(value).toUpperCase();
   if (raw.includes("NAUKRI")) return "NAUKRI";
   if (raw.includes("LINKEDIN")) return "LINKEDIN";
+  if (raw.includes("DIRECT") || raw.includes("GITHUB") || raw.includes("PUBLIC")) return "DIRECT";
   return "OTHER";
 }
 
@@ -147,6 +148,7 @@ export async function POST(req: Request) {
   const fileName = clean(body.fileName) || "manual-import";
 
   let imported = 0;
+  let leadCreated = 0;
   let enriched = 0;
   let duplicateSkipped = 0;
   let skipped = 0;
@@ -156,8 +158,48 @@ export async function POST(req: Request) {
     const name = clean(row.name);
     const email = normalizedEmail(row.email);
     if (!name || !email) {
-      skipped += 1;
-      results.push({ name, email, status: "skipped", reason: "Name and valid email are required by the current Talent Repository schema." });
+      if (name) {
+        const phone = normalizedPhone(row.phone);
+        const company = clean(row.currentCompany);
+        const leadOr: any[] = [];
+        if (phone) leadOr.push({ phone });
+        if (company) leadOr.push({ name: { equals: name, mode: "insensitive" }, currentCompany: { equals: company, mode: "insensitive" } });
+        if (!leadOr.length) leadOr.push({ name: { equals: name, mode: "insensitive" } });
+        const existingLead = await tenantPrisma.prospect.findFirst({
+          where: { OR: leadOr },
+        });
+        if (existingLead) {
+          duplicateSkipped += 1;
+          results.push({ id: existingLead.id, name, email, status: "lead_duplicate" });
+        } else {
+          const lead = await tenantPrisma.prospect.create({
+            data: {
+              name,
+              email: email || null,
+              phone: phone || null,
+              currentDesignation: nullable(row.currentDesignation),
+              currentCompany: nullable(row.currentCompany),
+              currentCity: nullable(row.currentCity),
+              totalExperience: numberOrNull(row.totalExperience),
+              currentCtc: numberOrNull(row.currentCtc),
+              expectedCtc: numberOrNull(row.expectedCtc),
+              noticePeriod: numberOrNull(row.noticePeriod),
+              skills: skillsArray(row.skills),
+              linkedinUrl: nullable(row.linkedinUrl),
+              source,
+              sourceDetail: fileName,
+              notes: nullable(row.resumeHeadline ?? row.notes),
+              ownerId: user.id,
+              tags: ["sourcing-import", email ? "email-present" : "email-missing"],
+            },
+          });
+          leadCreated += 1;
+          results.push({ id: lead.id, name, email, status: "lead_created", reason: "Missing valid email; staged in Candidate Lead Inbox." });
+        }
+      } else {
+        skipped += 1;
+        results.push({ name, email, status: "skipped", reason: "Name is required." });
+      }
       continue;
     }
 
@@ -204,6 +246,7 @@ export async function POST(req: Request) {
     fileName,
     recordsProcessed: rows.length,
     recordsImported: imported,
+    leadsCreated: leadCreated,
     recordsEnriched: enriched,
     duplicatesSkipped: duplicateSkipped,
     recordsSkipped: skipped,

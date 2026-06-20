@@ -11,6 +11,7 @@ const stageByAction: Record<string, PipelineStage | null> = {
   "Verify Compensation": null,
   "Verify Notice": null,
   "Request Updated Resume": null,
+  "Request Availability": null,
   "Submit To Client": PipelineStage.SUBMITTED,
   "Schedule Interview": PipelineStage.INTERVIEW_SCHEDULED,
   "Generate Submission Package": null,

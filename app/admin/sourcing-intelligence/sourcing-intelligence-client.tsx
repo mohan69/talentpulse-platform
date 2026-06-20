@@ -13,11 +13,14 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Globe2,
   GitCompare,
+  Inbox,
   LinkIcon,
   ListChecks,
   MapPin,
   Radar,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -74,18 +77,62 @@ export type SourcingCandidate = {
   applications: {
     id: string;
     stage: string;
-    matchScore: number | null;
-    job: {
+      matchScore: number | null;
+      submittedAt: string | Date | null;
+      job: {
       id: string;
       title: string;
       location: string;
       skills: string[];
       client: { name: string } | null;
-    };
+      };
+  }[];
+  emailLogs?: {
+    createdAt: string | Date;
+    status: string;
   }[];
 };
 
-type WorkbenchMode = "discover" | "import" | "resumes" | "api";
+export type SourcingJob = {
+  id: string;
+  title: string;
+  location: string;
+  experienceMin: number;
+  experienceMax: number;
+  skills: string[];
+  salaryMin: number | null;
+  salaryMax: number | null;
+  openings: number;
+  priority: string;
+  status: string;
+  aiParsedData: any;
+  client: { name: string } | null;
+};
+
+export type CandidateLead = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  currentCity: string | null;
+  currentCompany: string | null;
+  currentDesignation: string | null;
+  skills: string[];
+  linkedinUrl: string | null;
+  source: string;
+  sourceDetail: string | null;
+  notes: string | null;
+  status: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+};
+
+export type DiscoveryConfig = {
+  githubEnabled: boolean;
+  googleEnabled: boolean;
+};
+
+type WorkbenchMode = "jobs" | "discover" | "import" | "resumes" | "public" | "leads" | "api";
 type ImportMode = "csv" | "naukri" | "linkedin";
 
 type ImportRow = {
@@ -169,10 +216,32 @@ type ImportHistoryItem = {
     fileName?: string;
     recordsProcessed?: number;
     recordsImported?: number;
+    leadsCreated?: number;
     recordsEnriched?: number;
     duplicatesSkipped?: number;
     recordsSkipped?: number;
   };
+};
+
+type JobSupplySignal = {
+  job: SourcingJob;
+  strong: ScoredCandidate[];
+  medium: ScoredCandidate[];
+  weak: ScoredCandidate[];
+  supplyGap: number;
+  missingSkills: string[];
+  missingLocations: string[];
+  recommendedAction: string;
+};
+
+type PublicLead = {
+  name: string;
+  company?: string | null;
+  role?: string | null;
+  location?: string | null;
+  publicUrl?: string | null;
+  source: string;
+  notes?: string | null;
 };
 
 const examples = [
@@ -188,6 +257,7 @@ const recruiterActions = [
   "Verify Compensation",
   "Verify Notice",
   "Request Updated Resume",
+  "Request Availability",
   "Submit To Client",
   "Schedule Interview",
   "Generate Submission Package",
@@ -324,10 +394,95 @@ function profileCompleteness(candidate: SourcingCandidate) {
 }
 
 function sourceFreshness(candidate: SourcingCandidate) {
-  const days = daysSince(candidate.updatedAt);
+  const lastSubmission = candidate.applications
+    .map((application) => application.submittedAt)
+    .filter(Boolean)
+    .map((value) => daysSince(value as string | Date))
+    .sort((a, b) => a - b)[0];
+  const lastContact = candidate.emailLogs?.[0]?.createdAt ? daysSince(candidate.emailLogs[0].createdAt) : undefined;
+  const days = Math.min(daysSince(candidate.createdAt), daysSince(candidate.updatedAt), lastSubmission ?? 999, lastContact ?? 999);
   if (days <= 30) return "Fresh";
   if (days <= 90) return "Aging";
   return "Stale";
+}
+
+function freshnessAge(candidate: SourcingCandidate) {
+  const lastSubmission = candidate.applications
+    .map((application) => application.submittedAt)
+    .filter(Boolean)
+    .map((value) => daysSince(value as string | Date))
+    .sort((a, b) => a - b)[0];
+  const lastContact = candidate.emailLogs?.[0]?.createdAt ? daysSince(candidate.emailLogs[0].createdAt) : undefined;
+  return Math.min(daysSince(candidate.createdAt), daysSince(candidate.updatedAt), lastSubmission ?? 999, lastContact ?? 999);
+}
+
+function candidateQualityScore(candidate: SourcingCandidate) {
+  const skillsCompleteness = Math.min(18, candidate.skills.length * 3);
+  const contact = (candidate.email ? 8 : 0) + (candidate.phone ? 8 : 0) + (candidate.linkedinUrl ? 4 : 0);
+  const resume = candidate.aiSummary || candidate.applications.length > 0 ? 10 : 0;
+  const experience = (candidate.totalExperience > 0 ? 8 : 0) + (candidate.currentCompany ? 5 : 0) + (candidate.currentDesignation ? 5 : 0);
+  const compensation = (candidate.currentCtc ? 6 : 0) + (candidate.expectedCtc ? 6 : 0);
+  const notice = candidate.noticePeriod !== null ? 8 : 0;
+  const freshness = sourceFreshness(candidate) === "Fresh" ? 12 : sourceFreshness(candidate) === "Aging" ? 7 : 2;
+  const source = sourceReliability(candidate.source) * 2;
+  return Math.min(100, skillsCompleteness + contact + resume + experience + compensation + notice + freshness + source);
+}
+
+function qualityLabel(score: number) {
+  if (score >= 80) return "High Quality";
+  if (score >= 60) return "Medium Quality";
+  return "Needs Enrichment";
+}
+
+function jobRequiredNotice(job: SourcingJob) {
+  const data = job.aiParsedData as any;
+  const raw = data?.noticePeriod ?? data?.notice_period ?? data?.maxNoticePeriod ?? data?.joiningDays ?? null;
+  const num = raw === null ? 0 : Number(String(raw).replace(/[^\d.]/g, ""));
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+function formatLpa(value: number | null) {
+  return value ? `${Math.round(value / 100000)} LPA` : "Not specified";
+}
+
+function jobParsedQuery(job: SourcingJob): ParsedQuery {
+  return {
+    role: job.title,
+    targetSkills: job.skills,
+    location: job.location,
+    minExperience: job.experienceMin || null,
+    maxNotice: jobRequiredNotice(job),
+    maxComp: job.salaryMax,
+    queryTokens: tokens(`${job.title} ${job.skills.join(" ")} ${job.location}`),
+  };
+}
+
+function scoreJobCandidate(candidate: SourcingCandidate, job: SourcingJob) {
+  const parsed = jobParsedQuery(job);
+  const base = scoreCandidate(candidate, parsed);
+  const quality = candidateQualityScore(candidate);
+  const adjusted = Math.min(100, Math.round(base.score * 0.82 + quality * 0.18));
+  return { ...base, score: adjusted, label: scoreLabel(adjusted) };
+}
+
+function buildJobSupplySignals(jobs: SourcingJob[], candidates: SourcingCandidate[]): JobSupplySignal[] {
+  return jobs.map((job) => {
+    const scored = candidates.map((candidate) => scoreJobCandidate(candidate, job)).sort((a, b) => b.score - a.score);
+    const strong = scored.filter((result) => result.score >= 85);
+    const medium = scored.filter((result) => result.score >= 70 && result.score < 85);
+    const weak = scored.filter((result) => result.score >= 50 && result.score < 70);
+    const availableSkillSet = new Set(scored.slice(0, Math.max(10, job.openings * 2)).flatMap((result) => result.matched.map(normalize)));
+    const missingSkills = job.skills.filter((skill) => !availableSkillSet.has(normalize(skill))).slice(0, 8);
+    const locationMatches = scored.filter((result) => [result.candidate.currentCity ?? "", ...result.candidate.preferredLocations].some((location) => normalize(location).includes(normalize(job.location))));
+    const missingLocations = locationMatches.length ? [] : [job.location];
+    const supplyGap = Math.max(0, job.openings - strong.length - medium.length);
+    const recommendedAction = supplyGap > 0
+      ? `Import more ${missingSkills[0] ?? job.title} profiles${missingLocations.length ? ` in ${missingLocations.join(", ")}` : ""}.`
+      : strong.length > 0
+        ? "Review strong matches and start screening."
+        : "Broaden search criteria or import adjacent profiles.";
+    return { job, strong, medium, weak, supplyGap, missingSkills, missingLocations, recommendedAction };
+  });
 }
 
 function getKnownSkills(candidates: SourcingCandidate[]) {
@@ -615,6 +770,12 @@ function sourceStats(candidates: SourcingCandidate[], scored: ScoredCandidate[],
     const avgScore = sourceScores.length ? Math.round(sourceScores.reduce((sum, result) => sum + result.score, 0) / sourceScores.length) : 0;
     const avgCompleteness = rows.length ? Math.round(rows.reduce((sum, candidate) => sum + profileCompleteness(candidate), 0) / rows.length) : 0;
     const duplicateRate = rows.length ? Math.round((duplicateCount / rows.length) * 100) : 0;
+    const qualified = sourceScores.filter((result) => result.score >= 70 && candidateQualityScore(result.candidate) >= 60).length;
+    const shortlisted = rows.filter((candidate) => candidate.applications.some((application) => ["REVIEWED", "AI_SCREENING"].includes(application.stage))).length;
+    const submitted = rows.filter((candidate) => candidate.applications.some((application) => ["SUBMITTED", "INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    const interviewed = rows.filter((candidate) => candidate.applications.some((application) => ["INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    const offered = rows.filter((candidate) => candidate.applications.some((application) => ["OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    const joined = rows.filter((candidate) => candidate.applications.some((application) => application.stage === "JOINED")).length;
     return {
       source,
       label: sourceLabel(source),
@@ -625,6 +786,13 @@ function sourceStats(candidates: SourcingCandidate[], scored: ScoredCandidate[],
       avgCompleteness,
       lastImport,
       duplicateRate,
+      qualified,
+      shortlisted,
+      submitted,
+      interviewed,
+      offered,
+      joined,
+      conversionRate: rows.length ? Math.round((joined / rows.length) * 100) : 0,
       health: rows.length === 0 ? "No Data" : duplicateRate > 10 || avgCompleteness < 60 ? "Review" : "Healthy",
     };
   });
@@ -636,10 +804,23 @@ function distribution(values: string[], limit = 8) {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([label, count]) => ({ label, count }));
 }
 
-export function SourcingIntelligenceClient({ candidates, loadError }: { candidates: SourcingCandidate[]; loadError?: string }) {
-  const [mode, setMode] = useState<WorkbenchMode>("discover");
+export function SourcingIntelligenceClient({
+  candidates,
+  jobs,
+  leads,
+  discoveryConfig,
+  loadError,
+}: {
+  candidates: SourcingCandidate[];
+  jobs: SourcingJob[];
+  leads: CandidateLead[];
+  discoveryConfig: DiscoveryConfig;
+  loadError?: string;
+}) {
+  const [mode, setMode] = useState<WorkbenchMode>("jobs");
   const [importMode, setImportMode] = useState<ImportMode>("naukri");
   const [query, setQuery] = useState(examples[0]);
+  const [selectedJobId, setSelectedJobId] = useState(jobs[0]?.id ?? "");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [selected, setSelected] = useState<ScoredCandidate | null>(null);
   const [shortlistIds, setShortlistIds] = useState<string[]>([]);
@@ -653,6 +834,11 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
   const [history, setHistory] = useState<ImportHistoryItem[]>([]);
   const [resumeQueue, setResumeQueue] = useState<{ name: string; status: string }[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [publicQuery, setPublicQuery] = useState("Oracle SCM consultant Bangalore");
+  const [publicSource, setPublicSource] = useState<"github" | "google">("github");
+  const [publicSearching, setPublicSearching] = useState(false);
+  const [publicMessage, setPublicMessage] = useState<string | null>(null);
+  const [publicLeads, setPublicLeads] = useState<PublicLead[]>([]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("talentpulse_sourcing_shortlist");
@@ -671,16 +857,19 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
   const allScored = useMemo(() => candidates.map((candidate) => scoreCandidate(candidate, parsed)), [candidates, parsed]);
   const results = useMemo(() => allScored.filter((result) => passesFilters(result, filters)).sort((a, b) => b.score - a.score), [allScored, filters]);
   const topResults = results.slice(0, 18);
+  const jobSignals = useMemo(() => buildJobSupplySignals(jobs, candidates), [jobs, candidates]);
+  const selectedJobSignal = jobSignals.find((signal) => signal.job.id === selectedJobId) ?? jobSignals[0] ?? null;
   const shortlisted = useMemo(() => shortlistIds.map((id) => allScored.find((result) => result.candidate.id === id)).filter(Boolean) as ScoredCandidate[], [allScored, shortlistIds]);
   const compared = useMemo(() => compareIds.map((id) => allScored.find((result) => result.candidate.id === id)).filter(Boolean) as ScoredCandidate[], [allScored, compareIds]);
   const stats = useMemo(() => sourceStats(candidates, allScored, history), [candidates, allScored, history]);
   const kpis = useMemo(() => {
     const active = candidates.filter((candidate) => !["REJECTED", "JOINED"].includes(latestStage(candidate))).length;
-    const fresh = candidates.filter((candidate) => daysSince(candidate.updatedAt) <= 30).length;
-    const ready = allScored.filter((result) => result.score >= 85 && result.risks.length <= 1).length;
+    const fresh = candidates.filter((candidate) => sourceFreshness(candidate) === "Fresh").length;
+    const ready = allScored.filter((result) => result.score >= 85 && candidateQualityScore(result.candidate) >= 70 && result.risks.length <= 1).length;
     const high = allScored.filter((result) => result.score >= 85).length;
-    return { total: candidates.length, active, fresh, ready, shortlisted: shortlistIds.length, high };
-  }, [candidates, allScored, shortlistIds.length]);
+    const gaps = jobSignals.reduce((sum, signal) => sum + signal.supplyGap, 0);
+    return { total: candidates.length, active, fresh, ready, shortlisted: shortlistIds.length, high, gaps };
+  }, [candidates, allScored, shortlistIds.length, jobSignals]);
   const charts = useMemo(() => ({
     sources: stats.map((item) => ({ label: item.label, count: item.total })),
     skills: distribution(candidates.flatMap((candidate) => candidate.skills), 10),
@@ -739,7 +928,7 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error ?? "Import failed");
-      setImportMessage(`Imported ${body.summary.recordsImported}, enriched ${body.summary.recordsEnriched}, skipped ${body.summary.duplicatesSkipped + body.summary.recordsSkipped}. Refresh to see new repository records.`);
+      setImportMessage(`Imported ${body.summary.recordsImported}, created ${body.summary.leadsCreated ?? 0} leads, enriched ${body.summary.recordsEnriched}, skipped ${body.summary.duplicatesSkipped + body.summary.recordsSkipped}. Refresh to see new records.`);
       const refreshed = await fetch("/api/sourcing/import").then((res) => res.json()).catch(() => []);
       setHistory(refreshed);
     } catch (error) {
@@ -795,6 +984,48 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
     setActionMessage(response.ok ? body.message : body.error ?? "Action failed");
   }
 
+  async function runPublicDiscovery() {
+    setPublicSearching(true);
+    setPublicMessage(null);
+    try {
+      const response = await fetch("/api/sourcing/public-discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: publicSource, query: publicQuery }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Public discovery failed");
+      setPublicLeads(body.leads ?? []);
+      setPublicMessage(body.message ?? `${body.leads?.length ?? 0} public leads found.`);
+    } catch (error) {
+      setPublicLeads([]);
+      setPublicMessage(error instanceof Error ? error.message : "Public discovery failed");
+    } finally {
+      setPublicSearching(false);
+    }
+  }
+
+  async function savePublicLead(lead: PublicLead) {
+    setPublicMessage(`Saving ${lead.name} to Candidate Lead Inbox...`);
+    const response = await fetch("/api/prospects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: lead.name,
+        currentCompany: lead.company,
+        currentDesignation: lead.role,
+        currentCity: lead.location,
+        linkedinUrl: lead.publicUrl,
+        source: lead.source === "GitHub" ? "DIRECT" : "LINKEDIN",
+        sourceDetail: lead.publicUrl,
+        notes: lead.notes,
+        tags: ["public-discovery"],
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    setPublicMessage(response.ok ? `${lead.name} saved as prospect lead.` : body.error ?? "Could not save lead.");
+  }
+
   if (loadError) {
     return <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-6 text-rose-700"><div className="font-semibold">Unable to load Talent Repository data</div><p className="mt-2 text-sm">{loadError}</p></div>;
   }
@@ -809,9 +1040,12 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
 
       <section className="grid gap-3 md:grid-cols-4">
         {[
+          { id: "jobs", label: "Requisition Sourcing", icon: Briefcase, copy: "Supply gap by open job." },
           { id: "discover", label: "Talent Repository", icon: Radar, copy: "Search local and imported profiles." },
           { id: "import", label: "Upload CSV/XLSX", icon: FileSpreadsheet, copy: "Naukri exports and LinkedIn manual files." },
           { id: "resumes", label: "Upload Resumes", icon: FileText, copy: "Queue PDF/DOCX extraction." },
+          { id: "public", label: "Public Discovery", icon: Globe2, copy: "Official APIs only, no scraping." },
+          { id: "leads", label: "Lead Inbox", icon: Inbox, copy: "Prospects before candidate conversion." },
           { id: "api", label: "Future API Connector", icon: Sparkles, copy: "Official provider APIs only." },
         ].map((item) => (
           <button key={item.id} type="button" onClick={() => setMode(item.id as WorkbenchMode)} className={cn("rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50", mode === item.id && "border-primary bg-primary/5")}>
@@ -821,6 +1055,20 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
           </button>
         ))}
       </section>
+
+      {mode === "jobs" && (
+        <RequisitionSourcing
+          jobs={jobs}
+          selectedJobId={selectedJobId}
+          setSelectedJobId={setSelectedJobId}
+          selectedJobSignal={selectedJobSignal}
+          setSelected={setSelected}
+          toggleShortlist={toggleShortlist}
+          shortlistIds={shortlistIds}
+          runRecruiterAction={runRecruiterAction}
+          actionMessage={actionMessage}
+        />
+      )}
 
       {mode === "discover" && (
         <>
@@ -875,6 +1123,21 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
       )}
 
       {mode === "resumes" && <ResumeUpload queueResumes={queueResumes} resumeQueue={resumeQueue} />}
+      {mode === "public" && (
+        <PublicDiscovery
+          discoveryConfig={discoveryConfig}
+          publicSource={publicSource}
+          setPublicSource={setPublicSource}
+          publicQuery={publicQuery}
+          setPublicQuery={setPublicQuery}
+          publicSearching={publicSearching}
+          publicMessage={publicMessage}
+          publicLeads={publicLeads}
+          runPublicDiscovery={runPublicDiscovery}
+          savePublicLead={savePublicLead}
+        />
+      )}
+      {mode === "leads" && <CandidateLeadInbox leads={leads} />}
       {mode === "api" && <FutureApiConnector />}
 
       <CandidateDrawer selected={selected} setSelected={setSelected} />
@@ -882,7 +1145,7 @@ export function SourcingIntelligenceClient({ candidates, loadError }: { candidat
   );
 }
 
-function CommandCenter({ kpis, stats }: { kpis: { total: number; active: number; fresh: number; ready: number; shortlisted: number; high: number }; stats: ReturnType<typeof sourceStats> }) {
+function CommandCenter({ kpis, stats }: { kpis: { total: number; active: number; fresh: number; ready: number; shortlisted: number; high: number; gaps: number }; stats: ReturnType<typeof sourceStats> }) {
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -892,13 +1155,14 @@ function CommandCenter({ kpis, stats }: { kpis: { total: number; active: number;
         </div>
         <Badge variant="outline" className="w-fit">Client-side search target: under 1 second after load</Badge>
       </div>
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
         <Kpi label="Total Candidates" value={kpis.total} icon={Users} />
         <Kpi label="Active Candidates" value={kpis.active} icon={UserCheck} />
         <Kpi label="Fresh Profiles" value={kpis.fresh} icon={Clock} />
         <Kpi label="Ready To Submit" value={kpis.ready} icon={Send} />
         <Kpi label="Shortlisted" value={kpis.shortlisted} icon={ListChecks} />
         <Kpi label="High Match" value={kpis.high} icon={Sparkles} />
+        <Kpi label="Supply Gap" value={kpis.gaps} icon={AlertTriangle} />
       </div>
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         {stats.slice(0, 6).map((item) => (
@@ -928,6 +1192,169 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: number; icon:
       </div>
       <div className="mt-3 font-display text-3xl font-bold">{value}</div>
     </div>
+  );
+}
+
+function RequisitionSourcing({
+  jobs,
+  selectedJobId,
+  setSelectedJobId,
+  selectedJobSignal,
+  setSelected,
+  toggleShortlist,
+  shortlistIds,
+  runRecruiterAction,
+  actionMessage,
+}: {
+  jobs: SourcingJob[];
+  selectedJobId: string;
+  setSelectedJobId: (value: string) => void;
+  selectedJobSignal: JobSupplySignal | null;
+  setSelected: (value: ScoredCandidate) => void;
+  toggleShortlist: (id: string) => void;
+  shortlistIds: string[];
+  runRecruiterAction: (result: ScoredCandidate, action: string) => void;
+  actionMessage: string | null;
+}) {
+  if (!jobs.length || !selectedJobSignal) {
+    return <section className="rounded-xl border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">No open requisitions available for sourcing.</section>;
+  }
+  const signal = selectedJobSignal;
+  const job = signal.job;
+  const requiredNotice = jobRequiredNotice(job);
+  const candidateRows = [...signal.strong.slice(0, 5), ...signal.medium.slice(0, 4), ...signal.weak.slice(0, 3)];
+
+  return (
+    <section className="grid gap-6 xl:grid-cols-[340px_1fr]">
+      <aside className="rounded-xl bg-card p-5 shadow-sm">
+        <h2 className="font-display text-xl font-semibold">Open Requisitions</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Pick a job to see supply strength, gaps and recommended acquisition actions.</p>
+        <div className="mt-4 space-y-2">
+          {jobs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelectedJobId(item.id)}
+              className={cn("w-full rounded-lg border p-3 text-left transition-colors hover:border-primary/50", selectedJobId === item.id && "border-primary bg-primary/5")}
+            >
+              <div className="font-medium">{item.title}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{item.client?.name ?? "Client"} · {item.location} · {item.openings} openings</div>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="space-y-6">
+        <section className="rounded-xl bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-2xl font-bold">{job.title}</h2>
+                <Badge variant="outline">{job.client?.name ?? "No client"}</Badge>
+                <Badge>{job.openings} needed</Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <span>{job.location}</span>
+                <span>{job.experienceMin}-{job.experienceMax || "Any"} yrs</span>
+                <span>{formatLpa(job.salaryMin)} - {formatLpa(job.salaryMax)}</span>
+                <span>Notice: {requiredNotice ? `${requiredNotice} days` : "Not specified"}</span>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-background p-4 text-center">
+              <div className="text-xs text-muted-foreground">Supply Gap</div>
+              <div className={cn("font-display text-4xl font-bold", signal.supplyGap > 0 ? "text-rose-600" : "text-emerald-600")}>{signal.supplyGap}</div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <Mini label="Strong Matches" value={signal.strong.length} />
+            <Mini label="Medium Matches" value={signal.medium.length} />
+            <Mini label="Weak Matches" value={signal.weak.length} />
+            <Mini label="Available Pool" value={signal.strong.length + signal.medium.length + signal.weak.length} />
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <GapBlock title="Required Skills" values={job.skills.length ? job.skills : ["Not specified"]} />
+            <GapBlock title="Missing Skills" values={signal.missingSkills.length ? signal.missingSkills : ["No major skill gap"]} warning={signal.missingSkills.length > 0} />
+            <GapBlock title="Missing Locations" values={signal.missingLocations.length ? signal.missingLocations : ["Location supply available"]} warning={signal.missingLocations.length > 0} />
+          </div>
+
+          <div className="mt-5 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
+            <div className="font-semibold">Recommended Action</div>
+            <div className="mt-1 text-muted-foreground">{signal.recommendedAction}</div>
+          </div>
+        </section>
+
+        <section className="rounded-xl bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="font-display text-xl font-semibold">Qualified Candidate Supply</h2>
+              <p className="text-sm text-muted-foreground">Ranked from Talent Repository, Naukri imports, LinkedIn manual imports and resume uploads.</p>
+            </div>
+            {actionMessage && <Badge variant="outline">{actionMessage}</Badge>}
+          </div>
+          <div className="mt-4 space-y-3">
+            {candidateRows.map((result) => (
+              <CandidateCard
+                key={result.candidate.id}
+                result={result}
+                shortlisted={shortlistIds.includes(result.candidate.id)}
+                compared={false}
+                onOpen={() => setSelected(result)}
+                onShortlist={() => toggleShortlist(result.candidate.id)}
+                onCompare={() => setSelected(result)}
+                onAction={(action) => runRecruiterAction(result, action)}
+              />
+            ))}
+            {!candidateRows.length && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No viable matches yet. Import more profiles for this requisition.</div>}
+          </div>
+        </section>
+
+        <OutreachQueue candidates={candidateRows} runRecruiterAction={runRecruiterAction} />
+      </div>
+    </section>
+  );
+}
+
+function GapBlock({ title, values, warning = false }: { title: string; values: string[]; warning?: boolean }) {
+  return (
+    <div className={cn("rounded-lg border p-4", warning && "border-amber-500/30 bg-amber-500/10")}>
+      <div className="mb-2 text-sm font-semibold">{title}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {values.map((value) => <Badge key={value} variant={warning ? "secondary" : "outline"}>{value}</Badge>)}
+      </div>
+    </div>
+  );
+}
+
+function OutreachQueue({ candidates, runRecruiterAction }: { candidates: ScoredCandidate[]; runRecruiterAction: (result: ScoredCandidate, action: string) => void }) {
+  const tasks = candidates.flatMap((result) => [
+    !result.candidate.aiSummary ? { result, action: "Request Updated Resume", reason: "Resume intelligence missing" } : null,
+    !result.candidate.expectedCtc ? { result, action: "Verify Compensation", reason: "Expected CTC missing" } : null,
+    result.candidate.noticePeriod === null ? { result, action: "Verify Notice", reason: "Notice period missing" } : null,
+    sourceFreshness(result.candidate) !== "Fresh" ? { result, action: "Request Availability", reason: `${sourceFreshness(result.candidate)} profile` } : null,
+  ].filter(Boolean) as { result: ScoredCandidate; action: string; reason: string }[]).slice(0, 8);
+
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <RefreshCw className="h-5 w-5 text-primary" />
+        <h2 className="font-display text-xl font-semibold">Outreach Queue</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">Request missing resume, compensation, notice period and availability before submission.</p>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {tasks.map((task) => (
+          <div key={`${task.result.candidate.id}-${task.action}`} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+            <div>
+              <div className="font-medium">{task.result.candidate.name}</div>
+              <div className="text-xs text-muted-foreground">{task.reason}</div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => runRecruiterAction(task.result, task.action)}>{task.action}</Button>
+          </div>
+        ))}
+        {!tasks.length && <div className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">No outreach gaps for the visible candidate supply.</div>}
+      </div>
+    </section>
   );
 }
 
@@ -1057,6 +1484,7 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
 }) {
   const candidate = result.candidate;
   const stage = latestStage(candidate);
+  const quality = candidateQualityScore(candidate);
   return (
     <div className="rounded-xl border bg-background p-4 transition-colors hover:border-primary/50">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1072,15 +1500,17 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
             <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{candidate.currentCity ?? "Location not specified"}</span>
             <span>{candidate.totalExperience} yrs</span>
             <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{sourceFreshness(candidate)}</span>
+            <span>{qualityLabel(quality)} · {quality}</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {candidate.skills.slice(0, 7).map((skill) => <Badge key={skill} variant="secondary" className="font-normal">{skill}</Badge>)}
           </div>
         </button>
-        <div className="w-full shrink-0 xl:w-44">
+        <div className="w-full shrink-0 xl:w-48">
           <div className={cn("text-right font-display text-4xl font-bold", scoreClass(result.score))}>{result.score}</div>
           <div className="mb-2 text-right text-xs text-muted-foreground">{result.label}</div>
           <Progress value={result.score} className="h-2" />
+          <div className="mt-2 text-right text-xs text-muted-foreground">Quality {quality}</div>
         </div>
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -1232,12 +1662,15 @@ function SourceAndCharts({ stats, charts }: { stats: ReturnType<typeof sourceSta
                 <Badge variant={item.health === "Healthy" ? "default" : "secondary"}>{item.health}</Badge>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <Mini label="Records" value={item.total} />
-                <Mini label="Fresh" value={item.fresh} />
-                <Mini label="Avg Match" value={item.avgScore} />
-                <Mini label="Completeness" value={`${item.avgCompleteness}%`} />
-                <Mini label="Dup Rate" value={`${item.duplicateRate}%`} />
-                <Mini label="Health" value={item.health} />
+                <Mini label="Imported" value={item.total} />
+                <Mini label="Qualified" value={item.qualified} />
+                <Mini label="Shortlisted" value={item.shortlisted} />
+                <Mini label="Submitted" value={item.submitted} />
+                <Mini label="Interviewed" value={item.interviewed} />
+                <Mini label="Offered" value={item.offered} />
+                <Mini label="Joined" value={item.joined} />
+                <Mini label="Join Rate" value={`${item.conversionRate}%`} />
+                <Mini label="Avg Quality" value={`${item.avgCompleteness}%`} />
               </div>
             </div>
           ))}
@@ -1365,6 +1798,7 @@ function ImportHistory({ history }: { history: ImportHistoryItem[] }) {
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <Mini label="Processed" value={item.metadata?.recordsProcessed ?? 0} />
               <Mini label="Imported" value={item.metadata?.recordsImported ?? 0} />
+              <Mini label="Leads" value={item.metadata?.leadsCreated ?? 0} />
               <Mini label="Enriched" value={item.metadata?.recordsEnriched ?? 0} />
               <Mini label="Duplicates" value={item.metadata?.duplicatesSkipped ?? 0} />
             </div>
@@ -1383,6 +1817,106 @@ function ResumeUpload({ queueResumes, resumeQueue }: { queueResumes: (files?: Fi
       <p className="mt-1 text-sm text-muted-foreground">Upload PDF/DOCX resumes. Extraction is queued as a safe placeholder if a parser is not available.</p>
       <div className="mt-4 rounded-lg border p-4"><Input type="file" accept=".pdf,.docx" multiple onChange={(event) => queueResumes(event.target.files)} /></div>
       <div className="mt-4 space-y-2">{resumeQueue.map((file) => <div key={file.name} className="flex items-center justify-between rounded-lg border p-3 text-sm"><span>{file.name}</span><Badge variant="secondary">{file.status}</Badge></div>)}{resumeQueue.length === 0 && <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No resumes queued yet.</div>}</div>
+    </section>
+  );
+}
+
+function PublicDiscovery({
+  discoveryConfig,
+  publicSource,
+  setPublicSource,
+  publicQuery,
+  setPublicQuery,
+  publicSearching,
+  publicMessage,
+  publicLeads,
+  runPublicDiscovery,
+  savePublicLead,
+}: {
+  discoveryConfig: DiscoveryConfig;
+  publicSource: "github" | "google";
+  setPublicSource: (value: "github" | "google") => void;
+  publicQuery: string;
+  setPublicQuery: (value: string) => void;
+  publicSearching: boolean;
+  publicMessage: string | null;
+  publicLeads: PublicLead[];
+  runPublicDiscovery: () => void;
+  savePublicLead: (lead: PublicLead) => void;
+}) {
+  const enabled = publicSource === "github" ? discoveryConfig.githubEnabled : discoveryConfig.googleEnabled;
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="font-display text-xl font-semibold">Public Discovery Engine</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Uses official GitHub or Google Programmable Search APIs when credentials exist. No scraping is enabled.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant={publicSource === "github" ? "default" : "outline"} onClick={() => setPublicSource("github")}>GitHub API</Button>
+          <Button variant={publicSource === "google" ? "default" : "outline"} onClick={() => setPublicSource("google")}>Google PSE</Button>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]">
+        <Input value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="Oracle SCM consultant Bangalore" />
+        <Button disabled={!enabled || publicSearching || !publicQuery.trim()} onClick={runPublicDiscovery}><Search className="h-4 w-4" /> {publicSearching ? "Searching..." : "Find Leads"}</Button>
+      </div>
+      {!enabled && <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">Credential missing for {publicSource === "github" ? "GitHub API" : "Google Programmable Search"}. Add the official credential to enable this workflow.</div>}
+      {publicMessage && <div className="mt-4 rounded-lg border bg-muted/40 p-3 text-sm">{publicMessage}</div>}
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {publicLeads.map((lead) => (
+          <div key={`${lead.source}-${lead.publicUrl ?? lead.name}`} className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">{lead.name}</div>
+                <div className="text-sm text-muted-foreground">{lead.role ?? "Role unknown"} · {lead.company ?? "Company unknown"}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{lead.location ?? "Location unknown"} · {lead.source}</div>
+              </div>
+              <Badge variant="outline">Lead</Badge>
+            </div>
+            {lead.publicUrl && <a href={lead.publicUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-primary"><LinkIcon className="h-4 w-4" /> Public profile</a>}
+            {lead.notes && <p className="mt-3 text-sm text-muted-foreground">{lead.notes}</p>}
+            <div className="mt-4 flex justify-end">
+              <Button size="sm" variant="outline" onClick={() => savePublicLead(lead)}>Save to Lead Inbox</Button>
+            </div>
+          </div>
+        ))}
+        {publicLeads.length === 0 && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Run an official API search to stage leads before conversion.</div>}
+      </div>
+    </section>
+  );
+}
+
+function CandidateLeadInbox({ leads }: { leads: CandidateLead[] }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <Inbox className="h-5 w-5 text-primary" />
+        <h2 className="font-display text-xl font-semibold">Candidate Lead Inbox</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">Public/manual leads are stored as prospects until recruiters confirm enough contact data to convert them into candidates.</p>
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {leads.map((lead) => (
+          <div key={lead.id} className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">{lead.name}</div>
+                <div className="text-sm text-muted-foreground">{lead.currentDesignation ?? "Role unknown"} · {lead.currentCompany ?? "Company unknown"}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{lead.currentCity ?? "Location unknown"} · {sourceShortLabel(lead.source)}</div>
+              </div>
+              <Badge variant={lead.status === "NEW" ? "default" : "secondary"}>{lead.status.replace(/_/g, " ")}</Badge>
+            </div>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+              <Mini label="Contact" value={lead.email || lead.phone ? "Available" : "Missing"} />
+              <Mini label="Freshness" value={daysSince(lead.updatedAt) <= 30 ? "Fresh" : daysSince(lead.updatedAt) <= 90 ? "Aging" : "Stale"} />
+              <Mini label="Skills" value={lead.skills.length} />
+            </div>
+            {lead.linkedinUrl && <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-primary"><LinkIcon className="h-4 w-4" /> Public URL</a>}
+            {lead.notes && <p className="mt-3 text-sm text-muted-foreground">{lead.notes}</p>}
+          </div>
+        ))}
+        {leads.length === 0 && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No prospect leads yet. Use public discovery or manual import to fill the inbox.</div>}
+      </div>
     </section>
   );
 }

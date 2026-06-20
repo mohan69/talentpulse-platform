@@ -64,7 +64,11 @@ export async function POST(request: Request) {
     expectedCtc: numberOrNull(parsed.expectedCtc),
     noticePeriod: numberOrNull(parsed.noticePeriod),
     linkedinUrl: clean(parsed.linkedinUrl) || undefined,
-    aiSummary: clean(parsed.summary) || undefined,
+    aiSummary: [
+      clean(parsed.summary),
+      stringArray(parsed.certifications).length ? `Certifications: ${stringArray(parsed.certifications).join(", ")}` : "",
+      stringArray(parsed.previousCompanies).length ? `Previous companies: ${stringArray(parsed.previousCompanies).join(", ")}` : "",
+    ].filter(Boolean).join("\n") || undefined,
     source: CandidateSource.OTHER,
     ownerId: user.id,
   };
