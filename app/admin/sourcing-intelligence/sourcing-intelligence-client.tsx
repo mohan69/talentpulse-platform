@@ -39,6 +39,14 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
@@ -162,6 +170,7 @@ export type ManagedPortal = {
     profilesUsed: number;
     jobsPosted: number;
     monthlyCost: number | null;
+    validFrom?: string | Date | null;
     validUntil: string | Date | null;
     isActive: boolean;
     notes: string | null;
@@ -942,25 +951,90 @@ function portalSourceKey(name: string) {
   return "OTHER";
 }
 
+const portalConfigPrefix = "TP_PORTAL_CONFIG::";
+type PortalSubscriptionStatus = "Active" | "Expiring" | "Expired" | "Trial";
+type CredentialStatus = "Configured" | "Missing" | "Invalid";
+type PortalConfigMetadata = {
+  vendor?: string;
+  annualCost?: number;
+  seatsPurchased?: number;
+  seatsUsed?: number;
+  status?: PortalSubscriptionStatus;
+  credentialStatus?: CredentialStatus;
+  usageNotes?: string;
+};
+
+function parsePortalConfig(notes: string | null | undefined): PortalConfigMetadata {
+  if (!notes) return {};
+  if (!notes.startsWith(portalConfigPrefix)) return { usageNotes: notes };
+  try {
+    const parsed = JSON.parse(notes.slice(portalConfigPrefix.length));
+    return typeof parsed === "object" && parsed ? parsed : {};
+  } catch {
+    return { usageNotes: notes.replace(portalConfigPrefix, "") };
+  }
+}
+
+function serializePortalConfig(config: PortalConfigMetadata) {
+  return `${portalConfigPrefix}${JSON.stringify(config)}`;
+}
+
+function isoDate(value: string | Date | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function daysUntil(value: string | Date | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.ceil((date.getTime() - Date.now()) / 86400000);
+}
+
+function derivePortalStatus(primary: ManagedPortal["subscriptions"][number] | null, platformActive: boolean | undefined, config: PortalConfigMetadata) {
+  if (config.status) return config.status;
+  if (!primary || platformActive === false || primary.isActive === false) return "Expired";
+  const remainingDays = daysUntil(primary.validUntil);
+  if (remainingDays != null && remainingDays < 0) return "Expired";
+  if (remainingDays != null && remainingDays <= 30) return "Expiring";
+  return "Active";
+}
+
 function portalRegistryRows(portals: ManagedPortal[]) {
   return managedPortalCatalog.map((portalName) => {
     const platform = portals.find((portal) => normalize(portal.name) === normalize(portalName) || normalize(portal.name).includes(normalize(portalName)) || normalize(portalName).includes(normalize(portal.name)));
     const activeSubs = platform?.subscriptions.filter((sub) => sub.isActive) ?? [];
     const primary = activeSubs[0] ?? platform?.subscriptions[0] ?? null;
+    const config = parsePortalConfig(primary?.notes);
     const credits = primary?.profileLimit ? Math.max(0, primary.profileLimit - primary.profilesUsed) : primary?.jobPostLimit ? Math.max(0, primary.jobPostLimit - primary.jobsPosted) : null;
-    const expired = primary?.validUntil ? new Date(primary.validUntil) < new Date() : false;
+    const status = !platform ? "Not configured" : !primary ? "Needs subscription" : derivePortalStatus(primary, platform.isActive, config);
+    const seatsPurchased = Number(config.seatsPurchased ?? 0);
+    const seatsUsed = Number(config.seatsUsed ?? 0);
     return {
+      platformId: platform?.id ?? null,
+      subscriptionId: primary?.id ?? null,
       portalName,
       configuredName: platform?.name ?? portalName,
+      vendor: config.vendor ?? platform?.description ?? "",
       subscriptionOwner: primary?.recruiter?.name ?? primary?.recruiter?.email ?? "Not assigned",
+      subscriptionOwnerId: primary?.recruiterId ?? "",
       loginOwner: primary?.username ?? primary?.recruiter?.email ?? "Not assigned",
       planType: primary?.planName ?? "Not configured",
       monthlyCost: primary?.monthlyCost ?? 0,
+      annualCost: Number(config.annualCost ?? (primary?.monthlyCost ? primary.monthlyCost * 12 : 0)),
+      seatsPurchased,
+      seatsUsed,
+      availableSeats: seatsPurchased ? Math.max(0, seatsPurchased - seatsUsed) : 0,
       availableCredits: credits,
       expiryDate: primary?.validUntil ?? null,
-      usageNotes: primary?.notes ?? platform?.description ?? "",
+      renewalDate: primary?.validUntil ?? null,
+      credentialStatus: config.credentialStatus ?? (primary?.username ? "Configured" : "Missing"),
+      usageNotes: config.usageNotes ?? "",
       allowedImportMethod: allowedImportMethod(portalName),
-      status: !platform ? "Not configured" : !primary ? "Needs subscription" : expired ? "Expired" : primary.isActive ? "Active" : "Paused",
+      status,
+      rawSubscription: primary,
     };
   });
 }
@@ -2000,8 +2074,10 @@ function ManagedSourcingOperations({
 }) {
   const firstJob = jobs[0];
   const activePortals = portalRegistry.filter((portal) => portal.status === "Active");
+  const activePortalNames = new Set(activePortals.map((portal) => portal.portalName));
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [configuringPortal, setConfiguringPortal] = useState<ReturnType<typeof portalRegistryRows>[number] | null>(null);
   const [assignmentForm, setAssignmentForm] = useState({
     jobId: firstJob?.id ?? "",
     portalNames: activePortals.slice(0, 3).map((portal) => portal.portalName),
@@ -2025,6 +2101,16 @@ function ManagedSourcingOperations({
     candidatesImported: "0",
     notes: "",
   });
+  const registryMetrics = {
+    activePortals: activePortals.length,
+    monthlySpend: activePortals.reduce((sum, portal) => sum + portal.monthlyCost, 0),
+    annualSpend: activePortals.reduce((sum, portal) => sum + (portal.annualCost || portal.monthlyCost * 12), 0),
+    expiringSoon: portalRegistry.filter((portal) => {
+      const remainingDays = daysUntil(portal.renewalDate);
+      return remainingDays != null && remainingDays >= 0 && remainingDays <= 30;
+    }).length,
+    availableSeats: activePortals.reduce((sum, portal) => sum + portal.availableSeats, 0),
+  };
 
   async function saveOperation(type: "assignment" | "search_log" | "delivery", entityId: string, metadata: Record<string, any>) {
     setSaving(true);
@@ -2055,13 +2141,18 @@ function ManagedSourcingOperations({
       setMessage("Select a requisition before saving assignment.");
       return;
     }
+    const activePortalSelections = assignmentForm.portalNames.filter((name) => activePortalNames.has(name));
+    if (!activePortalSelections.length) {
+      setMessage("Configure at least one Active portal before saving an assignment.");
+      return;
+    }
     const entityId = `msa-${job.id}-${Date.now()}`;
     await saveOperation("assignment", entityId, {
       assignmentId: entityId,
       jobId: job.id,
       jobTitle: job.title,
       clientName: job.client?.name ?? "Unassigned client",
-      portalNames: assignmentForm.portalNames,
+      portalNames: activePortalSelections,
       operatorId: operator?.id ?? null,
       operatorName: operator?.name ?? operator?.email ?? "Unassigned",
       targetCount: Number(assignmentForm.targetCount || job.openings || 0),
@@ -2081,7 +2172,7 @@ function ManagedSourcingOperations({
     }
     await saveOperation("search_log", assignmentId, {
       assignmentId,
-      portalName: searchForm.portalName,
+      portalName: activePortalNames.has(searchForm.portalName) ? searchForm.portalName : activePortals[0]?.portalName ?? searchForm.portalName,
       searchQuery: searchForm.searchQuery,
       filtersUsed: searchForm.filtersUsed,
       profilesViewed: Number(searchForm.profilesViewed || 0),
@@ -2170,8 +2261,16 @@ function ManagedSourcingOperations({
 
       {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
 
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Mini label="Active Portals" value={registryMetrics.activePortals} />
+        <Mini label="Monthly Spend" value={formatMoney(registryMetrics.monthlySpend)} />
+        <Mini label="Annual Spend" value={formatMoney(registryMetrics.annualSpend)} />
+        <Mini label="Expiring in 30 Days" value={registryMetrics.expiringSoon} />
+        <Mini label="Available Seats" value={registryMetrics.availableSeats} />
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]">
-        <PortalRegistryTable rows={portalRegistry} />
+        <PortalRegistryTable rows={portalRegistry} onConfigure={setConfiguringPortal} />
         <OperatorDashboard
           todayAssignments={todayAssignments}
           overdueAssignments={overdueAssignments}
@@ -2211,7 +2310,7 @@ function ManagedSourcingOperations({
             <div>
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Portal Sources</div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {portalRegistry.map((portal) => (
+                {activePortals.map((portal) => (
                   <label key={portal.portalName} className="flex items-center gap-2 rounded-lg border p-2 text-sm">
                     <input
                       type="checkbox"
@@ -2226,6 +2325,7 @@ function ManagedSourcingOperations({
                     <span>{portal.portalName}</span>
                   </label>
                 ))}
+                {!activePortals.length && <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">Configure an Active portal subscription first.</div>}
               </div>
             </div>
             <Button disabled={saving || !assignmentForm.jobId} onClick={saveAssignment}><ClipboardList className="h-4 w-4" /> Save Assignment</Button>
@@ -2243,7 +2343,7 @@ function ManagedSourcingOperations({
           </div>
           <div className="mt-4 space-y-3">
             <SelectLike label="Assignment" value={searchForm.assignmentId} onChange={(value) => setSearchForm((current) => ({ ...current, assignmentId: value }))} options={assignmentRows.map(({ activity, metadata }) => [activity.entityId, `${metadata.jobTitle ?? "Assignment"} - ${metadata.clientName ?? "Client"}`])} />
-            <SelectLike label="Portal Used" value={searchForm.portalName} onChange={(value) => setSearchForm((current) => ({ ...current, portalName: value }))} options={portalRegistry.map((portal) => [portal.portalName, portal.portalName])} />
+            <SelectLike label="Portal Used" value={activePortalNames.has(searchForm.portalName) ? searchForm.portalName : activePortals[0]?.portalName ?? ""} onChange={(value) => setSearchForm((current) => ({ ...current, portalName: value }))} options={activePortals.map((portal) => [portal.portalName, portal.portalName])} />
             <FilterInput label="Search Query" value={searchForm.searchQuery} onChange={(value) => setSearchForm((current) => ({ ...current, searchQuery: value }))} />
             <FilterInput label="Filters Used" value={searchForm.filtersUsed} onChange={(value) => setSearchForm((current) => ({ ...current, filtersUsed: value }))} />
             <div className="grid grid-cols-2 gap-2">
@@ -2268,11 +2368,17 @@ function ManagedSourcingOperations({
         <SourceRoiTable rows={sourceRoi} />
         <CustomerViewPanel candidates={selectedJobCandidates} deliveries={deliveries} />
       </div>
+
+      <PortalConfigDialog
+        portal={configuringPortal}
+        recruiters={recruiters}
+        onOpenChange={(open) => !open && setConfiguringPortal(null)}
+      />
     </section>
   );
 }
 
-function PortalRegistryTable({ rows }: { rows: ReturnType<typeof portalRegistryRows> }) {
+function PortalRegistryTable({ rows, onConfigure }: { rows: ReturnType<typeof portalRegistryRows>; onConfigure: (portal: ReturnType<typeof portalRegistryRows>[number]) => void }) {
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="flex items-center gap-2">
@@ -2281,21 +2387,226 @@ function PortalRegistryTable({ rows }: { rows: ReturnType<typeof portalRegistryR
       </div>
       <div className="mt-4 overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Owner</TableHead><TableHead>Plan</TableHead><TableHead>Credits</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Owner</TableHead><TableHead>Plan</TableHead><TableHead>Seats</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.portalName}>
                 <TableCell><div className="font-medium">{row.configuredName}</div><div className="text-xs text-muted-foreground">{row.allowedImportMethod}</div></TableCell>
                 <TableCell><div>{row.subscriptionOwner}</div><div className="text-xs text-muted-foreground">{row.loginOwner}</div></TableCell>
-                <TableCell><div>{row.planType}</div><div className="text-xs text-muted-foreground">{formatMoney(row.monthlyCost)}/mo</div></TableCell>
-                <TableCell>{row.availableCredits ?? "Usage-based"}</TableCell>
+                <TableCell><div>{row.planType}</div><div className="text-xs text-muted-foreground">{formatMoney(row.monthlyCost)}/mo · {formatMoney(row.annualCost)}/yr</div></TableCell>
+                <TableCell><div>{row.seatsPurchased ? `${row.availableSeats}/${row.seatsPurchased} available` : "Not tracked"}</div><div className="text-xs text-muted-foreground">{row.availableCredits ?? "Usage-based credits"}</div></TableCell>
                 <TableCell><Badge variant={row.status === "Active" ? "default" : row.status === "Expired" ? "destructive" : "secondary"}>{row.status}</Badge></TableCell>
+                <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onConfigure(row)}>Configure</Button></TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
     </section>
+  );
+}
+
+function PortalConfigDialog({
+  portal,
+  recruiters,
+  onOpenChange,
+}: {
+  portal: ReturnType<typeof portalRegistryRows>[number] | null;
+  recruiters: ManagedRecruiter[];
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [form, setForm] = useState({
+    portalName: "",
+    subscriptionOwnerId: "",
+    vendor: "",
+    planType: "",
+    monthlyCost: "",
+    annualCost: "",
+    seatsPurchased: "",
+    seatsUsed: "",
+    renewalDate: "",
+    status: "Active" as PortalSubscriptionStatus,
+    credentialStatus: "Missing" as CredentialStatus,
+    loginOwner: "",
+    usageNotes: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!portal) return;
+    setForm({
+      portalName: portal.configuredName,
+      subscriptionOwnerId: portal.subscriptionOwnerId || recruiters[0]?.id || "",
+      vendor: portal.vendor,
+      planType: portal.planType === "Not configured" ? "" : portal.planType,
+      monthlyCost: portal.monthlyCost ? String(portal.monthlyCost) : "",
+      annualCost: portal.annualCost ? String(portal.annualCost) : "",
+      seatsPurchased: portal.seatsPurchased ? String(portal.seatsPurchased) : "",
+      seatsUsed: portal.seatsUsed ? String(portal.seatsUsed) : "",
+      renewalDate: isoDate(portal.renewalDate),
+      status: ["Active", "Expiring", "Expired", "Trial"].includes(portal.status) ? portal.status as PortalSubscriptionStatus : "Active",
+      credentialStatus: ["Configured", "Missing", "Invalid"].includes(String(portal.credentialStatus)) ? portal.credentialStatus as CredentialStatus : "Missing",
+      loginOwner: portal.loginOwner === "Not assigned" ? "" : portal.loginOwner,
+      usageNotes: portal.usageNotes,
+    });
+    setError(null);
+  }, [portal, recruiters]);
+
+  function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function requestJson(url: string, init: RequestInit) {
+    const response = await fetch(url, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Portal configuration save failed");
+    return body;
+  }
+
+  async function save() {
+    if (!portal) return;
+    if (!form.portalName.trim()) {
+      setError("Portal name is required.");
+      return;
+    }
+    if (!form.subscriptionOwnerId) {
+      setError("Select a subscription owner before saving.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      let platformId = portal.platformId;
+      if (platformId) {
+        await requestJson(`/api/platforms/${platformId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: form.portalName.trim(),
+            description: form.vendor.trim() || null,
+            isActive: form.status !== "Expired",
+          }),
+        });
+      } else {
+        const platform = await requestJson("/api/platforms", {
+          method: "POST",
+          body: JSON.stringify({
+            name: form.portalName.trim(),
+            description: form.vendor.trim() || null,
+          }),
+        });
+        platformId = platform.id;
+      }
+
+      const notes = serializePortalConfig({
+        vendor: form.vendor.trim(),
+        annualCost: Number(form.annualCost || (Number(form.monthlyCost || 0) * 12)),
+        seatsPurchased: Number(form.seatsPurchased || 0),
+        seatsUsed: Number(form.seatsUsed || 0),
+        status: form.status,
+        credentialStatus: form.credentialStatus,
+        usageNotes: form.usageNotes.trim(),
+      });
+      const subscriptionBody = {
+        platformId,
+        recruiterId: form.subscriptionOwnerId,
+        username: form.loginOwner.trim() || null,
+        planName: form.planType.trim() || null,
+        monthlyCost: form.monthlyCost,
+        validUntil: form.renewalDate || null,
+        isActive: form.status !== "Expired",
+        notes,
+      };
+      if (portal.subscriptionId) {
+        await requestJson(`/api/platform-subscriptions/${portal.subscriptionId}`, {
+          method: "PATCH",
+          body: JSON.stringify(subscriptionBody),
+        });
+      } else {
+        await requestJson("/api/platform-subscriptions", {
+          method: "POST",
+          body: JSON.stringify(subscriptionBody),
+        });
+      }
+      window.location.reload();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Portal configuration save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disable() {
+    if (!portal?.subscriptionId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await requestJson(`/api/platform-subscriptions/${portal.subscriptionId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          isActive: false,
+          notes: serializePortalConfig({
+            vendor: form.vendor.trim(),
+            annualCost: Number(form.annualCost || (Number(form.monthlyCost || 0) * 12)),
+            seatsPurchased: Number(form.seatsPurchased || 0),
+            seatsUsed: Number(form.seatsUsed || 0),
+            status: "Expired",
+            credentialStatus: form.credentialStatus,
+            usageNotes: form.usageNotes.trim(),
+          }),
+        }),
+      });
+      window.location.reload();
+    } catch (disableError) {
+      setError(disableError instanceof Error ? disableError.message : "Subscription disable failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(portal)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{portal?.subscriptionId ? "Edit Portal Subscription" : "Add Portal Subscription"}</DialogTitle>
+          <DialogDescription>Configure authorized sourcing subscription details. Credentials are tracked by status only and secrets are not displayed here.</DialogDescription>
+        </DialogHeader>
+        {portal && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FilterInput label="Portal Name" value={form.portalName} onChange={(value) => set("portalName", value)} />
+            <SelectLike label="Subscription Owner" value={form.subscriptionOwnerId} onChange={(value) => set("subscriptionOwnerId", value)} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
+            <FilterInput label="Vendor" value={form.vendor} onChange={(value) => set("vendor", value)} />
+            <FilterInput label="Plan Type" value={form.planType} onChange={(value) => set("planType", value)} />
+            <FilterInput label="Monthly Cost" value={form.monthlyCost} onChange={(value) => set("monthlyCost", value)} />
+            <FilterInput label="Annual Cost" value={form.annualCost} onChange={(value) => set("annualCost", value)} />
+            <FilterInput label="Seats Purchased" value={form.seatsPurchased} onChange={(value) => set("seatsPurchased", value)} />
+            <FilterInput label="Seats Used" value={form.seatsUsed} onChange={(value) => set("seatsUsed", value)} />
+            <FilterInput label="Renewal Date" value={form.renewalDate} onChange={(value) => set("renewalDate", value)} />
+            <SelectLike label="Status" value={form.status} onChange={(value) => set("status", value as PortalSubscriptionStatus)} options={[["Active", "Active"], ["Expiring", "Expiring"], ["Expired", "Expired"], ["Trial", "Trial"]]} />
+            <SelectLike label="Credential Status" value={form.credentialStatus} onChange={(value) => set("credentialStatus", value as CredentialStatus)} options={[["Configured", "Configured"], ["Missing", "Missing"], ["Invalid", "Invalid"]]} />
+            <FilterInput label="Login Owner" value={form.loginOwner} onChange={(value) => set("loginOwner", value)} />
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Usage Notes</span>
+              <Textarea value={form.usageNotes} onChange={(event) => set("usageNotes", event.target.value)} rows={3} placeholder="Credits, contract constraints, allowed import method, support notes..." />
+            </label>
+          </div>
+        )}
+        {error && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {portal?.subscriptionId && (
+              <Button type="button" variant="outline" disabled={saving} onClick={disable}>Disable Subscription</Button>
+            )}
+          </div>
+          <Button type="button" disabled={saving || !portal} onClick={save}>
+            {portal?.subscriptionId ? "Save Changes" : "Add Portal Subscription"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2422,7 +2733,7 @@ function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegi
             {rows.filter((row) => row.portal.monthlyCost > 0 || row.searches > 0 || row.imported > 0).map((row) => (
               <TableRow key={row.portal.portalName}>
                 <TableCell><div className="font-medium">{row.portal.portalName}</div><div className="text-xs text-muted-foreground">CPQ {formatMoney(row.costPerQualified)} · CPP {formatMoney(row.costPerPlacement)}</div></TableCell>
-                <TableCell>{formatMoney(row.portal.monthlyCost)}</TableCell>
+                <TableCell><div>{formatMoney(row.portal.monthlyCost)}/mo</div><div className="text-xs text-muted-foreground">{formatMoney(row.portal.annualCost)}/yr</div></TableCell>
                 <TableCell>{row.searches}</TableCell>
                 <TableCell>{row.viewed}</TableCell>
                 <TableCell>{row.imported}</TableCell>

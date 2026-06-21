@@ -10,6 +10,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
   const data: any = {};
+  if (body.recruiterId !== undefined) data.recruiterId = body.recruiterId;
   if (body.username !== undefined) data.username = body.username || null;
   if (body.password !== undefined) data.encryptedPass = body.password || null;
   if (body.planName !== undefined) data.planName = body.planName || null;
