@@ -8,6 +8,7 @@ const entityByType: Record<string, string> = {
   assignment: "managed_sourcing_assignment",
   search_log: "portal_search_log",
   delivery: "customer_delivery_package",
+  search_query: "recruiter_search_query",
 };
 
 export async function GET() {
@@ -48,7 +49,9 @@ export async function POST(request: Request) {
     ? "managed_sourcing_assignment_saved"
     : type === "search_log"
       ? "portal_search_log_recorded"
-      : "customer_delivery_package_prepared";
+      : type === "search_query"
+        ? "recruiter_search_query_saved"
+        : "customer_delivery_package_prepared";
 
   const row = await tenantPrisma.activityLog.create({
     data: {

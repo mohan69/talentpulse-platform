@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ClipboardList,
   Clock,
+  Copy,
   Database,
   Download,
   FileSpreadsheet,
@@ -27,6 +28,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Save,
   ShieldCheck,
   Sparkles,
   Upload,
@@ -188,7 +190,7 @@ export type ManagedOpsActivity = {
   user?: { id: string; name: string | null; email: string } | null;
 };
 
-type WorkbenchMode = "jobs" | "discover" | "managed" | "import" | "resumes" | "public" | "leads" | "api";
+type WorkbenchMode = "jobs" | "operations" | "registry" | "import" | "public" | "leads" | "delivery" | "roi";
 type ImportMode = "csv" | "naukri" | "linkedin";
 
 type ImportRow = {
@@ -944,6 +946,10 @@ function operationDeliveries(activities: ManagedOpsActivity[]) {
   return activities.filter((item) => item.entityType === "customer_delivery_package");
 }
 
+function operationSearchQueries(activities: ManagedOpsActivity[]) {
+  return activities.filter((item) => item.entityType === "recruiter_search_query");
+}
+
 function portalSourceKey(name: string) {
   const normalizedName = name.toLowerCase();
   if (normalizedName.includes("naukri")) return "NAUKRI";
@@ -1198,14 +1204,14 @@ export function SourcingIntelligenceClient({
   const assignments = useMemo(() => operationAssignments(opsActivities), [opsActivities]);
   const searchLogs = useMemo(() => operationSearchLogs(opsActivities), [opsActivities]);
   const deliveries = useMemo(() => operationDeliveries(opsActivities), [opsActivities]);
+  const savedSearchQueries = useMemo(() => operationSearchQueries(opsActivities), [opsActivities]);
   const kpis = useMemo(() => {
-    const active = candidates.filter((candidate) => !["REJECTED", "JOINED"].includes(latestStage(candidate))).length;
     const fresh = candidates.filter((candidate) => sourceFreshness(candidate) === "Fresh").length;
     const ready = allScored.filter((result) => result.score >= 85 && candidateQualityScore(result.candidate) >= 70 && result.risks.length <= 1).length;
-    const high = allScored.filter((result) => result.score >= 85).length;
     const gaps = jobSignals.reduce((sum, signal) => sum + signal.supplyGap, 0);
-    return { total: candidates.length, active, fresh, ready, shortlisted: shortlistIds.length, high, gaps };
-  }, [candidates, allScored, shortlistIds.length, jobSignals]);
+    const pendingSubmissions = candidates.filter((candidate) => candidate.applications.some((application) => ["REVIEWED", "AI_SCREENING"].includes(application.stage))).length;
+    return { total: candidates.length, fresh, activeSearches: assignments.length, gaps, shortlisted: shortlistIds.length, ready, pendingSubmissions };
+  }, [candidates, allScored, shortlistIds.length, jobSignals, assignments.length]);
   const charts = useMemo(() => ({
     sources: stats.map((item) => ({ label: item.label, count: item.total })),
     skills: distribution(candidates.flatMap((candidate) => candidate.skills), 10),
@@ -1369,136 +1375,139 @@ export function SourcingIntelligenceClient({
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800">
-        Naukri and LinkedIn sourcing currently works through recruiter-authorized exports/manual imports. Direct portal scraping is not enabled.
+        TalentPulse supports candidate acquisition through authorized recruiter subscriptions, recruiter-owned exports, public APIs, referrals, resume imports and internal talent repository workflows. Portal access and capabilities vary by provider. Direct scraping and automated portal login are not enabled.
       </div>
 
       <CommandCenter kpis={kpis} stats={stats} />
 
-      <section className="grid gap-3 md:grid-cols-4">
-        {[
-          { id: "jobs", label: "Requisition Sourcing", icon: Briefcase, copy: "Supply gap by open job." },
-          { id: "discover", label: "Talent Repository", icon: Radar, copy: "Search local and imported profiles." },
-          { id: "managed", label: "Managed Ops", icon: UserCog, copy: "Portal assignments, SLA and ROI." },
-          { id: "import", label: "Upload CSV/XLSX", icon: FileSpreadsheet, copy: "Naukri exports and LinkedIn manual files." },
-          { id: "resumes", label: "Upload Resumes", icon: FileText, copy: "Queue PDF/DOCX extraction." },
-          { id: "public", label: "Public Discovery", icon: Globe2, copy: "Official APIs only, no scraping." },
-          { id: "leads", label: "Lead Inbox", icon: Inbox, copy: "Prospects before candidate conversion." },
-          { id: "api", label: "Future API Connector", icon: Sparkles, copy: "Official provider APIs only." },
-        ].map((item) => (
-          <button key={item.id} type="button" onClick={() => setMode(item.id as WorkbenchMode)} className={cn("rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50", mode === item.id && "border-primary bg-primary/5")}>
-            <item.icon className="mb-3 h-5 w-5 text-primary" />
-            <div className="font-medium">{item.label}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{item.copy}</div>
-          </button>
-        ))}
-      </section>
+      <Tabs value={mode} onValueChange={(value) => setMode(value as WorkbenchMode)} className="space-y-5">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-card p-2 shadow-sm">
+          {[
+            ["jobs", "Requisition Sourcing"],
+            ["operations", "Managed Operations"],
+            ["registry", "Portal Registry"],
+            ["import", "Import Candidates"],
+            ["public", "Public Discovery"],
+            ["leads", "Lead Inbox"],
+            ["delivery", "Candidate Delivery"],
+            ["roi", "Source ROI"],
+          ].map(([id, label]) => (
+            <TabsTrigger key={id} value={id} className="rounded-lg px-3 py-2 text-sm">{label}</TabsTrigger>
+          ))}
+        </TabsList>
 
-      {mode === "jobs" && (
-        <RequisitionSourcing
-          jobs={jobs}
-          selectedJobId={selectedJobId}
-          setSelectedJobId={setSelectedJobId}
-          selectedJobSignal={selectedJobSignal}
-          setSelected={setSelected}
-          toggleShortlist={toggleShortlist}
-          shortlistIds={shortlistIds}
-          runRecruiterAction={runRecruiterAction}
-          actionMessage={actionMessage}
-        />
-      )}
-
-      {mode === "discover" && (
-        <>
-          <DiscoveryWorkbench
-            query={query}
-            setQuery={setQuery}
-            parsed={parsed}
-            filters={filters}
-            setFilters={setFilters}
-            results={topResults}
-            totalResults={results.length}
-            queryIntelligence={queryIntelligence}
-            talentGraph={talentGraph}
-            shortlistIds={shortlistIds}
-            compareIds={compareIds}
-            toggleShortlist={toggleShortlist}
-            toggleCompare={toggleCompare}
+        <TabsContent value="jobs" className="mt-0 space-y-6">
+          <RequisitionSourcing
+            jobs={jobs}
+            selectedJobId={selectedJobId}
+            setSelectedJobId={setSelectedJobId}
+            selectedJobSignal={selectedJobSignal}
             setSelected={setSelected}
-            actionMessage={actionMessage}
-            setActionMessage={setActionMessage}
-            runRecruiterAction={runRecruiterAction}
-          />
-          <ShortlistWorkbench
-            shortlisted={shortlisted}
-            compared={compared}
-            compareIds={compareIds}
             toggleShortlist={toggleShortlist}
-            toggleCompare={toggleCompare}
-            exportShortlist={exportShortlist}
-            setActionMessage={setActionMessage}
+            shortlistIds={shortlistIds}
+            runRecruiterAction={runRecruiterAction}
+            actionMessage={actionMessage}
+            assignments={assignments}
+            savedSearchQueries={savedSearchQueries}
+            setOpsActivities={setOpsActivities}
           />
-          <SourceAndCharts stats={stats} charts={charts} />
-        </>
-      )}
+          <details className="rounded-xl bg-card p-5 shadow-sm">
+            <summary className="cursor-pointer font-display text-lg font-semibold">Talent Repository Search</summary>
+            <div className="mt-5 space-y-6">
+              <DiscoveryWorkbench
+                query={query}
+                setQuery={setQuery}
+                parsed={parsed}
+                filters={filters}
+                setFilters={setFilters}
+                results={topResults}
+                totalResults={results.length}
+                queryIntelligence={queryIntelligence}
+                talentGraph={talentGraph}
+                shortlistIds={shortlistIds}
+                compareIds={compareIds}
+                toggleShortlist={toggleShortlist}
+                toggleCompare={toggleCompare}
+                setSelected={setSelected}
+                actionMessage={actionMessage}
+                setActionMessage={setActionMessage}
+                runRecruiterAction={runRecruiterAction}
+              />
+              <ShortlistWorkbench
+                shortlisted={shortlisted}
+                compared={compared}
+                compareIds={compareIds}
+                toggleShortlist={toggleShortlist}
+                toggleCompare={toggleCompare}
+                exportShortlist={exportShortlist}
+                setActionMessage={setActionMessage}
+              />
+              <SourceAndCharts stats={stats} charts={charts} />
+            </div>
+          </details>
+        </TabsContent>
 
-      {mode === "import" && (
-        <ImportWorkbench
-          importMode={importMode}
-          setImportMode={setImportMode}
-          fileName={fileName}
-          detectedColumns={detectedColumns}
-          previewRows={previewRows}
-          selectedImportRows={previewRows.filter((row) => row.selected && row.duplicateStatus !== "missing_required")}
-          importMessage={importMessage}
-          importing={importing}
-          manualText={manualText}
-          setManualText={setManualText}
-          handleFile={handleFile}
-          previewManualText={previewManualText}
-          setPreviewRows={setPreviewRows}
-          importSelectedRows={importSelectedRows}
-          history={history}
-        />
-      )}
+        {(["operations", "registry", "delivery", "roi"] as const).map((view) => (
+          <TabsContent key={view} value={view} className="mt-0">
+            <ManagedSourcingOperations
+              view={view}
+              portalRegistry={portalRegistry}
+              recruiters={recruiters}
+              jobs={jobs}
+              candidates={candidates}
+              allScored={allScored}
+              assignments={assignments}
+              searchLogs={searchLogs}
+              deliveries={deliveries}
+              setOpsActivities={setOpsActivities}
+            />
+          </TabsContent>
+        ))}
 
-      {mode === "managed" && (
-        <ManagedSourcingOperations
-          portalRegistry={portalRegistry}
-          recruiters={recruiters}
-          jobs={jobs}
-          candidates={candidates}
-          allScored={allScored}
-          assignments={assignments}
-          searchLogs={searchLogs}
-          deliveries={deliveries}
-          setOpsActivities={setOpsActivities}
-        />
-      )}
+        <TabsContent value="import" className="mt-0 space-y-6">
+          <ImportWorkbench
+            importMode={importMode}
+            setImportMode={setImportMode}
+            fileName={fileName}
+            detectedColumns={detectedColumns}
+            previewRows={previewRows}
+            selectedImportRows={previewRows.filter((row) => row.selected && row.duplicateStatus !== "missing_required")}
+            importMessage={importMessage}
+            importing={importing}
+            manualText={manualText}
+            setManualText={setManualText}
+            handleFile={handleFile}
+            previewManualText={previewManualText}
+            setPreviewRows={setPreviewRows}
+            importSelectedRows={importSelectedRows}
+            history={history}
+          />
+          <ResumeUpload queueResumes={queueResumes} resumeQueue={resumeQueue} />
+        </TabsContent>
 
-      {mode === "resumes" && <ResumeUpload queueResumes={queueResumes} resumeQueue={resumeQueue} />}
-      {mode === "public" && (
-        <PublicDiscovery
-          discoveryConfig={discoveryConfig}
-          publicSource={publicSource}
-          setPublicSource={setPublicSource}
-          publicQuery={publicQuery}
-          setPublicQuery={setPublicQuery}
-          publicSearching={publicSearching}
-          publicMessage={publicMessage}
-          publicLeads={publicLeads}
-          runPublicDiscovery={runPublicDiscovery}
-          savePublicLead={savePublicLead}
-        />
-      )}
-      {mode === "leads" && <CandidateLeadInbox leads={leads} />}
-      {mode === "api" && <FutureApiConnector />}
+        <TabsContent value="public" className="mt-0">
+          <PublicDiscovery
+            discoveryConfig={discoveryConfig}
+            publicSource={publicSource}
+            setPublicSource={setPublicSource}
+            publicQuery={publicQuery}
+            setPublicQuery={setPublicQuery}
+            publicSearching={publicSearching}
+            publicMessage={publicMessage}
+            publicLeads={publicLeads}
+            runPublicDiscovery={runPublicDiscovery}
+            savePublicLead={savePublicLead}
+          />
+        </TabsContent>
+        <TabsContent value="leads" className="mt-0"><CandidateLeadInbox leads={leads} /></TabsContent>
+      </Tabs>
 
       <CandidateDrawer selected={selected} setSelected={setSelected} />
     </div>
   );
 }
 
-function CommandCenter({ kpis, stats }: { kpis: { total: number; active: number; fresh: number; ready: number; shortlisted: number; high: number; gaps: number }; stats: ReturnType<typeof sourceStats> }) {
+function CommandCenter({ kpis, stats }: { kpis: { total: number; fresh: number; activeSearches: number; gaps: number; shortlisted: number; ready: number; pendingSubmissions: number }; stats: ReturnType<typeof sourceStats> }) {
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -1510,27 +1519,12 @@ function CommandCenter({ kpis, stats }: { kpis: { total: number; active: number;
       </div>
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
         <Kpi label="Total Candidates" value={kpis.total} icon={Users} />
-        <Kpi label="Active Candidates" value={kpis.active} icon={UserCheck} />
         <Kpi label="Fresh Profiles" value={kpis.fresh} icon={Clock} />
-        <Kpi label="Ready To Submit" value={kpis.ready} icon={Send} />
-        <Kpi label="Shortlisted" value={kpis.shortlisted} icon={ListChecks} />
-        <Kpi label="High Match" value={kpis.high} icon={Sparkles} />
+        <Kpi label="Active Searches" value={kpis.activeSearches} icon={Search} />
         <Kpi label="Supply Gap" value={kpis.gaps} icon={AlertTriangle} />
-      </div>
-      <div className="mt-5 grid gap-3 lg:grid-cols-3">
-        {stats.slice(0, 6).map((item) => (
-          <div key={item.source} className="rounded-lg border bg-background p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-medium">{item.label}</div>
-              <Badge variant={item.health === "Healthy" ? "default" : "secondary"}>{item.health}</Badge>
-            </div>
-            <div className="mt-3 flex items-end justify-between">
-              <div className="font-display text-3xl font-bold">{item.total}</div>
-              <div className="text-right text-xs text-muted-foreground">{item.percentage}% of pool<br />{item.fresh} fresh</div>
-            </div>
-            <Progress value={item.total ? Math.round((item.fresh / item.total) * 100) : 0} className="mt-3 h-2" />
-          </div>
-        ))}
+        <Kpi label="Shortlisted" value={kpis.shortlisted} icon={ListChecks} />
+        <Kpi label="Ready To Submit" value={kpis.ready} icon={Send} />
+        <Kpi label="Pending Submissions" value={kpis.pendingSubmissions} icon={ClipboardList} />
       </div>
     </section>
   );
@@ -1558,6 +1552,9 @@ function RequisitionSourcing({
   shortlistIds,
   runRecruiterAction,
   actionMessage,
+  assignments,
+  savedSearchQueries,
+  setOpsActivities,
 }: {
   jobs: SourcingJob[];
   selectedJobId: string;
@@ -1568,6 +1565,9 @@ function RequisitionSourcing({
   shortlistIds: string[];
   runRecruiterAction: (result: ScoredCandidate, action: string) => void;
   actionMessage: string | null;
+  assignments: ManagedOpsActivity[];
+  savedSearchQueries: ManagedOpsActivity[];
+  setOpsActivities: Dispatch<SetStateAction<ManagedOpsActivity[]>>;
 }) {
   if (!jobs.length || !selectedJobSignal) {
     return <section className="rounded-xl border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">No open requisitions available for sourcing.</section>;
@@ -1638,6 +1638,13 @@ function RequisitionSourcing({
           </div>
         </section>
 
+        <SearchQueryGenerator
+          job={job}
+          assignments={assignments}
+          savedSearchQueries={savedSearchQueries}
+          setOpsActivities={setOpsActivities}
+        />
+
         <section className="rounded-xl bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -1665,6 +1672,274 @@ function RequisitionSourcing({
 
         <OutreachQueue candidates={candidateRows} runRecruiterAction={runRecruiterAction} />
       </div>
+    </section>
+  );
+}
+
+type SearchQueryForm = {
+  jobTitle: string;
+  skills: string;
+  experience: string;
+  location: string;
+  noticePeriod: string;
+  industry: string;
+  keywords: string;
+};
+type SearchPlatform = "Naukri" | "LinkedIn Recruiter" | "Foundit" | "Indeed" | "Instahyre" | "Cutshort";
+type GeneratedSearchQuery = {
+  platform: SearchPlatform;
+  booleanSearch: string;
+  broadSearch: string;
+  precisionSearch: string;
+};
+
+function formFromJob(job: SourcingJob): SearchQueryForm {
+  const notice = jobRequiredNotice(job);
+  const parsed = (job.aiParsedData ?? {}) as Record<string, any>;
+  return {
+    jobTitle: job.title,
+    skills: job.skills.join(", "),
+    experience: `${job.experienceMin || 0}-${job.experienceMax || "Any"} years`,
+    location: job.location,
+    noticePeriod: notice ? `${notice} days` : "",
+    industry: String(parsed.industry ?? parsed.domain ?? ""),
+    keywords: "",
+  };
+}
+
+function splitSearchTerms(value: string) {
+  return value.split(/[,\n;]/).map((term) => term.trim()).filter(Boolean);
+}
+
+function quoted(value: string) {
+  const clean = value.trim().replace(/"/g, "");
+  return clean.includes(" ") || clean.includes("/") || clean.includes("-") ? `"${clean}"` : clean;
+}
+
+function orClause(values: string[]) {
+  const terms = values.filter(Boolean).map(quoted);
+  if (!terms.length) return "";
+  return terms.length === 1 ? terms[0] : `(${terms.join(" OR ")})`;
+}
+
+function andJoin(values: string[]) {
+  return values.filter(Boolean).join(" AND ");
+}
+
+function relevantSkillVariants(skills: string[]) {
+  const expanded = new Set<string>();
+  for (const skill of skills) {
+    expanded.add(skill);
+    if (/s4\/hana/i.test(skill)) expanded.add(skill.replace(/S4\/HANA/i, "S/4HANA"));
+    if (/s\/4hana/i.test(skill)) expanded.add(skill.replace(/S\/4HANA/i, "S4/HANA"));
+  }
+  return Array.from(expanded);
+}
+
+function generateSearchQueries(form: SearchQueryForm): GeneratedSearchQuery[] {
+  const title = form.jobTitle.trim();
+  const skills = relevantSkillVariants(splitSearchTerms(form.skills));
+  const keywords = splitSearchTerms(form.keywords);
+  const titleClause = title ? quoted(title) : "";
+  const skillsOr = orClause(skills);
+  const keywordOr = orClause(keywords);
+  const location = form.location.trim();
+  const experience = form.experience.trim();
+  const notice = form.noticePeriod.trim();
+  const industry = form.industry.trim();
+  const precisionSkills = skills.slice(0, 4).map(quoted);
+  const common = andJoin([titleClause, skillsOr, location, experience]);
+  const precisionCommon = andJoin([titleClause, ...precisionSkills, location, experience, notice ? `notice ${notice}` : "", industry ? quoted(industry) : "", keywordOr]);
+  const broadCommon = [title, ...skills.slice(0, 5), location, industry, ...keywords].filter(Boolean).join(" ");
+
+  return [
+    {
+      platform: "Naukri",
+      booleanSearch: common,
+      broadSearch: broadCommon,
+      precisionSearch: precisionCommon,
+    },
+    {
+      platform: "LinkedIn Recruiter",
+      booleanSearch: andJoin([titleClause, skillsOr, location ? `location:${quoted(location)}` : "", industry ? `industry:${quoted(industry)}` : ""]),
+      broadSearch: [title, skills.slice(0, 3).join(" "), location, industry].filter(Boolean).join(" "),
+      precisionSearch: andJoin([titleClause, ...precisionSkills, location ? `location:${quoted(location)}` : "", experience, keywordOr]),
+    },
+    {
+      platform: "Foundit",
+      booleanSearch: common,
+      broadSearch: broadCommon,
+      precisionSearch: andJoin([titleClause, skillsOr, location, experience, notice ? `notice:${quoted(notice)}` : "", keywordOr]),
+    },
+    {
+      platform: "Indeed",
+      booleanSearch: andJoin([titleClause, skillsOr, quoted(location), keywordOr]),
+      broadSearch: [title, skills.slice(0, 4).join(" "), location].filter(Boolean).join(" "),
+      precisionSearch: andJoin([titleClause, ...precisionSkills, quoted(location), experience]),
+    },
+    {
+      platform: "Instahyre",
+      booleanSearch: andJoin([`role:${titleClause}`, skillsOr ? `skills:${skillsOr}` : "", location ? `location:${quoted(location)}` : "", experience ? `experience:${quoted(experience)}` : ""]),
+      broadSearch: [title, skills.slice(0, 4).join(", "), location].filter(Boolean).join(" | "),
+      precisionSearch: andJoin([`role:${titleClause}`, ...precisionSkills.map((skill) => `skill:${skill}`), location ? `location:${quoted(location)}` : "", notice ? `notice:${quoted(notice)}` : ""]),
+    },
+    {
+      platform: "Cutshort",
+      booleanSearch: andJoin([titleClause, skillsOr, location, industry ? quoted(industry) : ""]),
+      broadSearch: [title, skills.slice(0, 5).join(" "), location, industry].filter(Boolean).join(" "),
+      precisionSearch: andJoin([titleClause, ...precisionSkills, location, experience, notice ? `notice ${notice}` : "", keywordOr]),
+    },
+  ];
+}
+
+function SearchQueryGenerator({
+  job,
+  assignments,
+  savedSearchQueries,
+  setOpsActivities,
+}: {
+  job: SourcingJob;
+  assignments: ManagedOpsActivity[];
+  savedSearchQueries: ManagedOpsActivity[];
+  setOpsActivities: Dispatch<SetStateAction<ManagedOpsActivity[]>>;
+}) {
+  const [form, setForm] = useState<SearchQueryForm>(() => formFromJob(job));
+  const [generatedAt, setGeneratedAt] = useState(() => Date.now());
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [copyKey, setCopyKey] = useState<string | null>(null);
+  const queries = useMemo(() => generateSearchQueries(form), [form, generatedAt]);
+  const assignmentOptions = assignments.map((assignment) => {
+    const metadata = metadataOf(assignment);
+    return [assignment.entityId, `${metadata.jobTitle ?? "Sourcing assignment"} - ${metadata.clientName ?? "Client"}`] as [string, string];
+  });
+
+  useEffect(() => {
+    setForm(formFromJob(job));
+    setGeneratedAt(Date.now());
+    setMessage(null);
+  }, [job.id]);
+
+  function set<K extends keyof SearchQueryForm>(key: K, value: SearchQueryForm[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function copyText(text: string, key: string) {
+    await navigator.clipboard.writeText(text);
+    setCopyKey(key);
+    window.setTimeout(() => setCopyKey(null), 1600);
+  }
+
+  async function persistSearchQuery(assign = false) {
+    setMessage(null);
+    const assignment = assignments.find((item) => item.entityId === selectedAssignmentId);
+    if (assign && !assignment) {
+      setMessage("Select a sourcing project before assigning the query.");
+      return;
+    }
+    try {
+      const entityId = `search-query-${job.id}-${Date.now()}`;
+      const response = await fetch("/api/sourcing/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "search_query",
+          entityId,
+          metadata: {
+            queryId: entityId,
+            jobId: job.id,
+            jobTitle: job.title,
+            clientName: job.client?.name ?? null,
+            inputs: form,
+            queries,
+            assignedAssignmentId: assign ? assignment?.entityId ?? null : null,
+            assignedAssignmentTitle: assign ? metadataOf(assignment!).jobTitle ?? null : null,
+            savedAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Could not save search query.");
+      setOpsActivities((current) => [body, ...current]);
+      setMessage(assign ? "Search query assigned to sourcing project." : "Search query saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save search query.");
+    }
+  }
+
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="font-display text-xl font-semibold">Generate Search Query</h2>
+          <p className="text-sm text-muted-foreground">Create platform-specific recruiter searches from the requisition. No portal scraping or automated login.</p>
+        </div>
+        <Button type="button" onClick={() => setGeneratedAt(Date.now())}><Sparkles className="h-4 w-4" /> Generate Search Query</Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <FilterInput label="Job Title" value={form.jobTitle} onChange={(value) => set("jobTitle", value)} />
+        <FilterInput label="Skills" value={form.skills} onChange={(value) => set("skills", value)} placeholder="SAP S4/HANA, delivery, migration" />
+        <FilterInput label="Experience" value={form.experience} onChange={(value) => set("experience", value)} placeholder="12-18 years" />
+        <FilterInput label="Location" value={form.location} onChange={(value) => set("location", value)} />
+        <FilterInput label="Notice Period" value={form.noticePeriod} onChange={(value) => set("noticePeriod", value)} placeholder="30 days" />
+        <FilterInput label="Industry" value={form.industry} onChange={(value) => set("industry", value)} />
+        <label className="block text-sm md:col-span-2">
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Keywords</span>
+          <Input value={form.keywords} onChange={(event) => set("keywords", event.target.value)} placeholder="implementation, rollout, global delivery" />
+        </label>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        {queries.map((queryRow) => (
+          <div key={queryRow.platform} className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="font-semibold">{queryRow.platform} Query</div>
+              <Badge variant="outline">3 variants</Badge>
+            </div>
+            {([
+              ["Boolean Search", queryRow.booleanSearch],
+              ["Broad Search", queryRow.broadSearch],
+              ["Precision Search", queryRow.precisionSearch],
+            ] as [string, string][]).map(([label, value]) => {
+              const key = `${queryRow.platform}-${label}`;
+              return (
+                <div key={key} className="mb-3 rounded-md border bg-muted/20 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+                    <Button size="sm" variant="ghost" onClick={() => copyText(value, key)}><Copy className="h-4 w-4" /> {copyKey === key ? "Copied" : "Copy"}</Button>
+                  </div>
+                  <pre className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed">{value || "Add inputs to generate query."}</pre>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+        <SelectLike label="Assign Query To Sourcing Project" value={selectedAssignmentId} onChange={setSelectedAssignmentId} options={[["", "Select assignment"], ...assignmentOptions]} />
+        <Button type="button" variant="outline" onClick={() => persistSearchQuery(false)}><Save className="h-4 w-4" /> Save Query</Button>
+        <Button type="button" onClick={() => persistSearchQuery(true)} disabled={!selectedAssignmentId}><ClipboardList className="h-4 w-4" /> Assign Query</Button>
+      </div>
+      {message && <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
+
+      {savedSearchQueries.length > 0 && (
+        <div className="mt-5 rounded-lg border p-4">
+          <div className="text-sm font-semibold">Recent Saved Queries</div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-3">
+            {savedSearchQueries.slice(0, 3).map((activity) => {
+              const metadata = metadataOf(activity);
+              return (
+                <div key={activity.id} className="rounded-md border bg-background p-3 text-sm">
+                  <div className="font-medium">{metadata.jobTitle ?? "Saved search query"}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{metadata.assignedAssignmentId ? "Assigned" : "Saved"} · {formatDate(activity.createdAt)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -2118,6 +2393,7 @@ function SourceAndCharts({ stats, charts }: { stats: ReturnType<typeof sourceSta
 }
 
 function ManagedSourcingOperations({
+  view,
   portalRegistry,
   recruiters,
   jobs,
@@ -2128,6 +2404,7 @@ function ManagedSourcingOperations({
   deliveries,
   setOpsActivities,
 }: {
+  view: "operations" | "registry" | "delivery" | "roi";
   portalRegistry: ReturnType<typeof portalRegistryRows>;
   recruiters: ManagedRecruiter[];
   jobs: SourcingJob[];
@@ -2299,6 +2576,7 @@ function ManagedSourcingOperations({
       joined,
       revenue,
       costPerQualified: qualified ? Math.round(portal.monthlyCost / qualified) : 0,
+      costPerSubmitted: submitted ? Math.round(portal.monthlyCost / submitted) : 0,
       costPerPlacement: joined ? Math.round(portal.monthlyCost / joined) : 0,
     };
   });
@@ -2327,120 +2605,128 @@ function ManagedSourcingOperations({
 
       {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Mini label="Active Portals" value={registryMetrics.activePortals} />
-        <Mini label="Monthly Spend" value={formatMoney(registryMetrics.monthlySpend)} />
-        <Mini label="Annual Spend" value={formatMoney(registryMetrics.annualSpend)} />
-        <Mini label="Expiring in 30 Days" value={registryMetrics.expiringSoon} />
-        <Mini label="Available Seats" value={registryMetrics.availableSeats} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]">
-        <PortalRegistryTable rows={portalRegistry} onConfigure={setConfiguringPortal} />
-        <OperatorDashboard
-          todayAssignments={todayAssignments}
-          overdueAssignments={overdueAssignments}
-          activePortals={activePortals.length}
-          pendingReview={pendingReview}
-          duplicateCount={duplicateCount}
-          pendingSubmissions={pendingSubmissions}
-        />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-        <section className="rounded-xl bg-card p-5 shadow-sm">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold">Sourcing Assignment</h2>
+      {view === "registry" && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Mini label="Active Portals" value={registryMetrics.activePortals} />
+            <Mini label="Monthly Spend" value={formatMoney(registryMetrics.monthlySpend)} />
+            <Mini label="Annual Spend" value={formatMoney(registryMetrics.annualSpend)} />
+            <Mini label="Expiring in 30 Days" value={registryMetrics.expiringSoon} />
+            <Mini label="Available Seats" value={registryMetrics.availableSeats} />
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">Assign subscription sources, operator, target count and deadline for a customer requisition.</p>
-          <div className="mt-4 space-y-3">
-            <SelectLike label="Customer Requisition" value={assignmentForm.jobId} onChange={(value) => {
-              const job = jobs.find((item) => item.id === value);
-              setAssignmentForm((current) => ({
-                ...current,
-                jobId: value,
-                targetCount: String(job?.openings ?? current.targetCount),
-                searchString: job ? `${job.title} ${job.skills.join(" ")} ${job.location}` : current.searchString,
-                mustHaveSkills: job?.skills.join(", ") ?? current.mustHaveSkills,
-              }));
-            }} options={jobs.map((job) => [job.id, `${job.title} - ${job.client?.name ?? "Client"}`])} />
-            <SelectLike label="Recruiter / Operator" value={assignmentForm.operatorId} onChange={(value) => setAssignmentForm((current) => ({ ...current, operatorId: value }))} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
-            <div className="grid grid-cols-2 gap-2">
-              <FilterInput label="Target Candidates" value={assignmentForm.targetCount} onChange={(value) => setAssignmentForm((current) => ({ ...current, targetCount: value }))} />
-              <FilterInput label="Deadline" value={assignmentForm.deadline} onChange={(value) => setAssignmentForm((current) => ({ ...current, deadline: value }))} />
-            </div>
-            <FilterInput label="Search String" value={assignmentForm.searchString} onChange={(value) => setAssignmentForm((current) => ({ ...current, searchString: value }))} />
-            <FilterInput label="Must-have Skills" value={assignmentForm.mustHaveSkills} onChange={(value) => setAssignmentForm((current) => ({ ...current, mustHaveSkills: value }))} />
-            <FilterInput label="Exclusion Criteria" value={assignmentForm.exclusions} onChange={(value) => setAssignmentForm((current) => ({ ...current, exclusions: value }))} />
-            <div>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Portal Sources</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {activePortals.map((portal) => (
-                  <label key={portal.portalName} className="flex items-start gap-2 rounded-lg border p-2 text-sm">
-                    <input
-                      className="mt-1"
-                      type="checkbox"
-                      checked={assignmentForm.portalNames.includes(portal.portalName)}
-                      onChange={(event) => setAssignmentForm((current) => ({
-                        ...current,
-                        portalNames: event.target.checked
-                          ? [...current.portalNames, portal.portalName]
-                          : current.portalNames.filter((item) => item !== portal.portalName),
-                      }))}
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-medium">{portal.portalName}</span>
-                      <span className="block text-xs text-muted-foreground">{portal.accessMethod} · {portal.status} · {portal.monthlyLimit ? portal.remainingThisMonth : portal.availableCredits ?? "Usage-based"} remaining</span>
-                      {(portal.apiStatus !== "Configured" && ["Official API", "Partner API", "Public API"].includes(portal.accessMethod)) || (portal.exportPermitted !== "Yes" && portal.accessMethod.toLowerCase().includes("export")) ? (
-                        <span className="mt-1 block text-xs text-amber-600">Check API/export configuration before use.</span>
-                      ) : null}
-                    </span>
-                  </label>
-                ))}
-                {!activePortals.length && <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">Configure an Active portal subscription first.</div>}
+          <PortalRegistryTable rows={portalRegistry} onConfigure={setConfiguringPortal} />
+        </>
+      )}
+
+      {view === "operations" && (
+        <>
+          <div className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
+            <OperatorDashboard
+              todayAssignments={todayAssignments}
+              overdueAssignments={overdueAssignments}
+              activePortals={activePortals.length}
+              pendingReview={pendingReview}
+              duplicateCount={duplicateCount}
+              pendingSubmissions={pendingSubmissions}
+            />
+            <DisabledPortalSummary rows={portalRegistry.filter((portal) => portal.status !== "Active")} />
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+            <section className="rounded-xl bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-primary" />
+                <h2 className="font-display text-xl font-semibold">Sourcing Assignment</h2>
               </div>
-            </div>
-            <Button disabled={saving || !assignmentForm.jobId} onClick={saveAssignment}><ClipboardList className="h-4 w-4" /> Save Assignment</Button>
+              <p className="mt-1 text-sm text-muted-foreground">Assign active subscription sources, operator, target count and deadline for a customer requisition.</p>
+              <div className="mt-4 space-y-3">
+                <SelectLike label="Customer Requisition" value={assignmentForm.jobId} onChange={(value) => {
+                  const job = jobs.find((item) => item.id === value);
+                  setAssignmentForm((current) => ({
+                    ...current,
+                    jobId: value,
+                    targetCount: String(job?.openings ?? current.targetCount),
+                    searchString: job ? `${job.title} ${job.skills.join(" ")} ${job.location}` : current.searchString,
+                    mustHaveSkills: job?.skills.join(", ") ?? current.mustHaveSkills,
+                  }));
+                }} options={jobs.map((job) => [job.id, `${job.title} - ${job.client?.name ?? "Client"}`])} />
+                <SelectLike label="Recruiter / Operator" value={assignmentForm.operatorId} onChange={(value) => setAssignmentForm((current) => ({ ...current, operatorId: value }))} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
+                <div className="grid grid-cols-2 gap-2">
+                  <FilterInput label="Target Candidates" value={assignmentForm.targetCount} onChange={(value) => setAssignmentForm((current) => ({ ...current, targetCount: value }))} />
+                  <FilterInput label="Deadline" value={assignmentForm.deadline} onChange={(value) => setAssignmentForm((current) => ({ ...current, deadline: value }))} />
+                </div>
+                <FilterInput label="Search String" value={assignmentForm.searchString} onChange={(value) => setAssignmentForm((current) => ({ ...current, searchString: value }))} />
+                <FilterInput label="Must-have Skills" value={assignmentForm.mustHaveSkills} onChange={(value) => setAssignmentForm((current) => ({ ...current, mustHaveSkills: value }))} />
+                <FilterInput label="Exclusion Criteria" value={assignmentForm.exclusions} onChange={(value) => setAssignmentForm((current) => ({ ...current, exclusions: value }))} />
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Active Portal Sources</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {activePortals.map((portal) => (
+                      <label key={portal.portalName} className="flex items-start gap-2 rounded-lg border p-2 text-sm">
+                        <input
+                          className="mt-1"
+                          type="checkbox"
+                          checked={assignmentForm.portalNames.includes(portal.portalName)}
+                          onChange={(event) => setAssignmentForm((current) => ({
+                            ...current,
+                            portalNames: event.target.checked
+                              ? [...current.portalNames, portal.portalName]
+                              : current.portalNames.filter((item) => item !== portal.portalName),
+                          }))}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium">{portal.portalName}</span>
+                          <span className="block text-xs text-muted-foreground">{portal.accessMethod} · {portal.status} · {portal.monthlyLimit ? portal.remainingThisMonth : portal.availableCredits ?? "Usage-based"} remaining</span>
+                          {(portal.apiStatus !== "Configured" && ["Official API", "Partner API", "Public API"].includes(portal.accessMethod)) || (portal.exportPermitted !== "Yes" && portal.accessMethod.toLowerCase().includes("export")) ? (
+                            <span className="mt-1 block text-xs text-amber-600">Check API/export configuration before use.</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                    {!activePortals.length && <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">Configure an Active portal subscription first.</div>}
+                  </div>
+                </div>
+                <Button disabled={saving || !assignmentForm.jobId} onClick={saveAssignment}><ClipboardList className="h-4 w-4" /> Save Assignment</Button>
+              </div>
+            </section>
+
+            <SlaDashboard rows={slaRows} />
           </div>
-        </section>
 
-        <SlaDashboard rows={slaRows} />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-        <section className="rounded-xl bg-card p-5 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Search className="h-5 w-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold">Portal Search Log</h2>
+          <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+            <section className="rounded-xl bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <Search className="h-5 w-5 text-primary" />
+                <h2 className="font-display text-xl font-semibold">Portal Search Log</h2>
+              </div>
+              <div className="mt-4 space-y-3">
+                <SelectLike label="Assignment" value={searchForm.assignmentId} onChange={(value) => setSearchForm((current) => ({ ...current, assignmentId: value }))} options={assignmentRows.map(({ activity, metadata }) => [activity.entityId, `${metadata.jobTitle ?? "Assignment"} - ${metadata.clientName ?? "Client"}`])} />
+                <SelectLike label="Portal Used" value={activePortalNames.has(searchForm.portalName) ? searchForm.portalName : activePortals[0]?.portalName ?? ""} onChange={(value) => setSearchForm((current) => ({ ...current, portalName: value }))} options={activePortals.map((portal) => [portal.portalName, portal.portalName])} />
+                <FilterInput label="Search Query" value={searchForm.searchQuery} onChange={(value) => setSearchForm((current) => ({ ...current, searchQuery: value }))} />
+                <FilterInput label="Filters Used" value={searchForm.filtersUsed} onChange={(value) => setSearchForm((current) => ({ ...current, filtersUsed: value }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <FilterInput label="Profiles Viewed" value={searchForm.profilesViewed} onChange={(value) => setSearchForm((current) => ({ ...current, profilesViewed: value }))} />
+                  <FilterInput label="Exported" value={searchForm.candidatesExported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesExported: value }))} />
+                  <FilterInput label="Contacted" value={searchForm.candidatesContacted} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesContacted: value }))} />
+                  <FilterInput label="Imported" value={searchForm.candidatesImported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesImported: value }))} />
+                </div>
+                <Textarea value={searchForm.notes} onChange={(event) => setSearchForm((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Operator notes, edge cases, portal limitations..." />
+                <Button disabled={saving} onClick={saveSearchLog}><Search className="h-4 w-4" /> Record Search Log</Button>
+              </div>
+            </section>
+            <SearchLogTimeline logs={searchLogs} />
           </div>
-          <div className="mt-4 space-y-3">
-            <SelectLike label="Assignment" value={searchForm.assignmentId} onChange={(value) => setSearchForm((current) => ({ ...current, assignmentId: value }))} options={assignmentRows.map(({ activity, metadata }) => [activity.entityId, `${metadata.jobTitle ?? "Assignment"} - ${metadata.clientName ?? "Client"}`])} />
-            <SelectLike label="Portal Used" value={activePortalNames.has(searchForm.portalName) ? searchForm.portalName : activePortals[0]?.portalName ?? ""} onChange={(value) => setSearchForm((current) => ({ ...current, portalName: value }))} options={activePortals.map((portal) => [portal.portalName, portal.portalName])} />
-            <FilterInput label="Search Query" value={searchForm.searchQuery} onChange={(value) => setSearchForm((current) => ({ ...current, searchQuery: value }))} />
-            <FilterInput label="Filters Used" value={searchForm.filtersUsed} onChange={(value) => setSearchForm((current) => ({ ...current, filtersUsed: value }))} />
-            <div className="grid grid-cols-2 gap-2">
-              <FilterInput label="Profiles Viewed" value={searchForm.profilesViewed} onChange={(value) => setSearchForm((current) => ({ ...current, profilesViewed: value }))} />
-              <FilterInput label="Exported" value={searchForm.candidatesExported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesExported: value }))} />
-              <FilterInput label="Contacted" value={searchForm.candidatesContacted} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesContacted: value }))} />
-              <FilterInput label="Imported" value={searchForm.candidatesImported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesImported: value }))} />
-            </div>
-            <Textarea value={searchForm.notes} onChange={(event) => setSearchForm((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Operator notes, edge cases, portal limitations..." />
-            <Button disabled={saving} onClick={saveSearchLog}><Search className="h-4 w-4" /> Record Search Log</Button>
-          </div>
-        </section>
-        <SearchLogTimeline logs={searchLogs} />
-      </div>
+        </>
+      )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <CustomerDeliveryPackage candidates={deliveryCandidates} selectedSla={selectedSla} saveOperation={saveOperation} saving={saving} />
-        <ImportWorkflowSummary selectedSla={selectedSla} />
-      </div>
+      {view === "delivery" && (
+        <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+          <CustomerDeliveryPackage candidates={deliveryCandidates} selectedSla={selectedSla} saveOperation={saveOperation} saving={saving} />
+          <CustomerViewPanel candidates={selectedJobCandidates} deliveries={deliveries} />
+        </div>
+      )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
-        <SourceRoiTable rows={sourceRoi} />
-        <CustomerViewPanel candidates={selectedJobCandidates} deliveries={deliveries} />
-      </div>
+      {view === "roi" && <SourceRoiTable rows={sourceRoi} />}
 
       <PortalConfigDialog
         portal={configuringPortal}
@@ -2460,7 +2746,7 @@ function PortalRegistryTable({ rows, onConfigure }: { rows: ReturnType<typeof po
       </div>
       <div className="mt-4 overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Owner</TableHead><TableHead>Plan</TableHead><TableHead>Seats</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Owner</TableHead><TableHead>Cost</TableHead><TableHead>Seats</TableHead><TableHead>Access</TableHead><TableHead>Readiness</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.portalName}>
@@ -2468,12 +2754,38 @@ function PortalRegistryTable({ rows, onConfigure }: { rows: ReturnType<typeof po
                 <TableCell><div>{row.subscriptionOwner}</div><div className="text-xs text-muted-foreground">{row.loginOwner}</div></TableCell>
                 <TableCell><div>{row.planType}</div><div className="text-xs text-muted-foreground">{formatMoney(row.monthlyCost)}/mo · {formatMoney(row.annualCost)}/yr</div></TableCell>
                 <TableCell><div>{row.seatsPurchased ? `${row.availableSeats}/${row.seatsPurchased} available` : "Not tracked"}</div><div className="text-xs text-muted-foreground">{row.availableCredits ?? "Usage-based credits"}</div></TableCell>
+                <TableCell><div>{row.accessMethod}</div><div className="text-xs text-muted-foreground">{row.credentialStatus}</div></TableCell>
+                <TableCell><div className="text-xs">API: {row.apiStatus}</div><div className="text-xs text-muted-foreground">Export: {row.exportPermitted}</div></TableCell>
                 <TableCell><Badge variant={row.status === "Active" ? "default" : row.status === "Expired" ? "destructive" : "secondary"}>{row.status}</Badge></TableCell>
                 <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onConfigure(row)}>Configure</Button></TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
+      </div>
+    </section>
+  );
+}
+
+function DisabledPortalSummary({ rows }: { rows: ReturnType<typeof portalRegistryRows> }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-5 w-5 text-amber-600" />
+        <h2 className="font-display text-xl font-semibold">Disabled / Unavailable Portals</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">Inactive portals are not available for assignment until subscription, status and access details are configured.</p>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {rows.slice(0, 8).map((portal) => (
+          <div key={portal.portalName} className="rounded-lg border p-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium">{portal.portalName}</div>
+              <Badge variant={portal.status === "Expired" ? "destructive" : "secondary"}>{portal.status}</Badge>
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">{portal.accessMethod} · {portal.credentialStatus}</div>
+          </div>
+        ))}
+        {!rows.length && <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">All configured portals are active.</div>}
       </div>
     </section>
   );
@@ -3017,7 +3329,7 @@ function CustomerDeliveryPackage({ candidates, selectedSla, saveOperation, savin
   );
 }
 
-function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegistryRows>[number]; searches: number; viewed: number; imported: number; shortlisted: number; submitted: number; interviewed: number; joined: number; revenue: number; costPerQualified: number; costPerPlacement: number }[] }) {
+function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegistryRows>[number]; searches: number; viewed: number; imported: number; shortlisted: number; submitted: number; interviewed: number; joined: number; revenue: number; costPerQualified: number; costPerSubmitted: number; costPerPlacement: number }[] }) {
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <h2 className="font-display text-xl font-semibold">Source ROI</h2>
@@ -3027,7 +3339,7 @@ function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegi
           <TableBody>
             {rows.filter((row) => row.portal.monthlyCost > 0 || row.searches > 0 || row.imported > 0).map((row) => (
               <TableRow key={row.portal.portalName}>
-                <TableCell><div className="font-medium">{row.portal.portalName}</div><div className="text-xs text-muted-foreground">CPQ {formatMoney(row.costPerQualified)} · CPP {formatMoney(row.costPerPlacement)}</div></TableCell>
+                <TableCell><div className="font-medium">{row.portal.portalName}</div><div className="text-xs text-muted-foreground">CPQ {formatMoney(row.costPerQualified)} · CPS {formatMoney(row.costPerSubmitted)} · CPJ {formatMoney(row.costPerPlacement)}</div></TableCell>
                 <TableCell><div>{formatMoney(row.portal.monthlyCost)}/mo</div><div className="text-xs text-muted-foreground">{formatMoney(row.portal.annualCost)}/yr · {row.portal.monthlyLimit ? row.portal.remainingThisMonth : "Usage-based"} remaining</div></TableCell>
                 <TableCell>{row.searches}</TableCell>
                 <TableCell>{row.viewed}</TableCell>
@@ -3108,11 +3420,11 @@ function ImportWorkbench(props: {
     <section className="rounded-xl bg-card p-5 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="font-display text-xl font-semibold">Source Import Center</h2>
-          <p className="text-sm text-muted-foreground">Preview, map and de-duplicate before saving into the Talent Repository.</p>
+          <h2 className="font-display text-xl font-semibold">Import Candidates</h2>
+          <p className="text-sm text-muted-foreground">Naukri exports, LinkedIn manual imports, Foundit/Indeed/other CSV files and resume batches with preview and deduplication.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(["naukri", "linkedin", "csv"] as ImportMode[]).map((mode) => <Button key={mode} variant={props.importMode === mode ? "default" : "outline"} onClick={() => props.setImportMode(mode)}>{mode === "csv" ? "CSV/XLSX" : mode === "naukri" ? "Naukri Export" : "LinkedIn Manual"}</Button>)}
+          {(["naukri", "linkedin", "csv"] as ImportMode[]).map((mode) => <Button key={mode} variant={props.importMode === mode ? "default" : "outline"} onClick={() => props.setImportMode(mode)}>{mode === "csv" ? "Foundit/Indeed/Other CSV" : mode === "naukri" ? "Naukri Export Import" : "LinkedIn Manual Import"}</Button>)}
         </div>
       </div>
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -3192,8 +3504,8 @@ function ImportHistory({ history }: { history: ImportHistoryItem[] }) {
 function ResumeUpload({ queueResumes, resumeQueue }: { queueResumes: (files?: FileList | null) => void; resumeQueue: { name: string; status: string }[] }) {
   return (
     <section className="rounded-xl bg-card p-5 shadow-sm">
-      <h2 className="font-display text-xl font-semibold">Resume Upload Intake</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Upload PDF/DOCX resumes. Extraction is queued as a safe placeholder if a parser is not available.</p>
+      <h2 className="font-display text-xl font-semibold">Resume Batch Upload</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Upload PDF/DOCX resumes from authorized sources. Extraction is queued as a safe placeholder if a parser is not available.</p>
       <div className="mt-4 rounded-lg border p-4"><Input type="file" accept=".pdf,.docx" multiple onChange={(event) => queueResumes(event.target.files)} /></div>
       <div className="mt-4 space-y-2">{resumeQueue.map((file) => <div key={file.name} className="flex items-center justify-between rounded-lg border p-3 text-sm"><span>{file.name}</span><Badge variant="secondary">{file.status}</Badge></div>)}{resumeQueue.length === 0 && <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No resumes queued yet.</div>}</div>
     </section>
@@ -3236,11 +3548,26 @@ function PublicDiscovery({
           <Button variant={publicSource === "google" ? "default" : "outline"} onClick={() => setPublicSource("google")}>Google PSE</Button>
         </div>
       </div>
-      <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]">
-        <Input value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="Oracle SCM consultant Bangalore" />
-        <Button disabled={!enabled || publicSearching || !publicQuery.trim()} onClick={runPublicDiscovery}><Search className="h-4 w-4" /> {publicSearching ? "Searching..." : "Find Leads"}</Button>
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <div className={cn("rounded-lg border p-4", discoveryConfig.githubEnabled ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10")}>
+          <div className="font-semibold">GitHub discovery {discoveryConfig.githubEnabled ? "configured" : "not configured"}</div>
+          <p className="mt-1 text-sm text-muted-foreground">{discoveryConfig.githubEnabled ? "Official GitHub API discovery is available." : "GitHub discovery is not configured. Add GITHUB_TOKEN to enable official API discovery."}</p>
+          {!discoveryConfig.githubEnabled && <div className="mt-3 text-xs font-medium text-amber-700">Configure in environment settings, then restart the app.</div>}
+        </div>
+        <div className={cn("rounded-lg border p-4", discoveryConfig.googleEnabled ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10")}>
+          <div className="font-semibold">Google PSE {discoveryConfig.googleEnabled ? "configured" : "not configured"}</div>
+          <p className="mt-1 text-sm text-muted-foreground">{discoveryConfig.googleEnabled ? "Google Programmable Search is available." : "Google Programmable Search is not configured. Add GOOGLE_PSE_API_KEY and GOOGLE_PSE_CX to enable public search."}</p>
+          {!discoveryConfig.googleEnabled && <div className="mt-3 text-xs font-medium text-amber-700">Configure official API credentials before searching.</div>}
+        </div>
       </div>
-      {!enabled && <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">Credential missing for {publicSource === "github" ? "GitHub API" : "Google Programmable Search"}. Add the official credential to enable this workflow.</div>}
+      {enabled ? (
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]">
+          <Input value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="Oracle SCM consultant Bangalore" />
+          <Button disabled={publicSearching || !publicQuery.trim()} onClick={runPublicDiscovery}><Search className="h-4 w-4" /> {publicSearching ? "Searching..." : "Find Leads"}</Button>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Select a configured official API source to discover partial leads and route them to the Lead Inbox.</div>
+      )}
       {publicMessage && <div className="mt-4 rounded-lg border bg-muted/40 p-3 text-sm">{publicMessage}</div>}
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {publicLeads.map((lead) => (
@@ -3288,10 +3615,13 @@ function CandidateLeadInbox({ leads }: { leads: CandidateLead[] }) {
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
               <Mini label="Contact" value={lead.email || lead.phone ? "Available" : "Missing"} />
               <Mini label="Freshness" value={daysSince(lead.updatedAt) <= 30 ? "Fresh" : daysSince(lead.updatedAt) <= 90 ? "Aging" : "Stale"} />
-              <Mini label="Skills" value={lead.skills.length} />
+              <Mini label="Enrichment" value={lead.email || lead.phone ? "Ready" : "Needs contact"} />
             </div>
             {lead.linkedinUrl && <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-primary"><LinkIcon className="h-4 w-4" /> Public URL</a>}
             {lead.notes && <p className="mt-3 text-sm text-muted-foreground">{lead.notes}</p>}
+            <div className="mt-4 flex justify-end">
+              <Button size="sm" variant="outline" onClick={() => window.open(`/admin/candidates/new?leadId=${lead.id}`, "_blank")}>Convert to Candidate</Button>
+            </div>
           </div>
         ))}
         {leads.length === 0 && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No prospect leads yet. Use public discovery or manual import to fill the inbox.</div>}
