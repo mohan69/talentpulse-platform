@@ -47,7 +47,15 @@ export async function POST(request: Request) {
   "noticePeriod": null,
   "linkedinUrl": "string",
   "projects": [{"projectName": "string", "role": "string", "skillsUsed": ["string"], "description": "string", "contribution": "string"}],
-  "summary": "string"
+  "summary": "string",
+  "executiveSummary": "string",
+  "industry": "string",
+  "seniority": "string",
+  "strengths": ["string"],
+  "risks": ["string"],
+  "missingInformation": ["string"],
+  "interviewQuestions": ["string"],
+  "similarJobs": ["string"]
 }
 Leave unknown fields as null, empty array, or empty string. Total experience in years (decimal OK). CTC in INR if Indian candidate. Respond with raw JSON only.`;
 

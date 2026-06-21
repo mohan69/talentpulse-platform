@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StageBadge } from "@/components/workspace/stage-badge";
 import { formatCurrency } from "@/lib/phase4/recruiter-revenue";
+import { buildAgencyMemory, buildSubmissionCopilot } from "@/lib/talent-intelligence";
 import type { PipelineStage } from "@prisma/client";
 
 type Row = {
@@ -26,6 +27,30 @@ type Row = {
   risks: string[];
   missing: string[];
   recommendation: string;
+  candidate: {
+    name: string;
+    email: string;
+    phone: string | null;
+    currentCity: string | null;
+    currentCompany: string | null;
+    currentDesignation: string | null;
+    totalExperience: number;
+    relevantExperience: number;
+    skills: string[];
+    currentCtc: number | null;
+    expectedCtc: number | null;
+    noticePeriod: number | null;
+    aiSummary: string | null;
+    source: string;
+  };
+  job: {
+    title: string;
+    location: string;
+    skills: string[];
+    salaryMin: number | null;
+    salaryMax: number | null;
+    client: { name: string } | null;
+  };
 };
 
 const actions = [
@@ -45,6 +70,8 @@ export function SubmissionIntelligenceClient({ rows }: { rows: Row[] }) {
   const [selectedId, setSelectedId] = useState(rows[0]?.applicationId ?? "");
   const [message, setMessage] = useState<string | null>(null);
   const selected = useMemo(() => rows.find((row) => row.applicationId === selectedId) ?? rows[0], [rows, selectedId]);
+  const copilot = useMemo(() => selected ? buildSubmissionCopilot(selected.candidate, selected.job) : null, [selected]);
+  const memory = useMemo(() => selected ? buildAgencyMemory([{ stage: selected.stage, job: selected.job }]) : null, [selected]);
 
   async function runAction(row: Row, action: string) {
     if (action === "Generate Submission Package") {
@@ -129,6 +156,38 @@ export function SubmissionIntelligenceClient({ rows }: { rows: Row[] }) {
             </div>
           </div>
 
+          {copilot && memory && (
+            <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+              <div className="rounded-xl bg-card p-5 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-primary" />
+                  <h3 className="font-display text-lg font-semibold">Submission Copilot</h3>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <CopilotItem label="Candidate Summary" value={copilot.candidateSummary} />
+                  <CopilotItem label="Why Fit" value={copilot.whyFit} />
+                  <CopilotItem label="Skills Match" value={copilot.skillsMatch} />
+                  <CopilotItem label="Relevant Experience" value={copilot.relevantExperience} />
+                  <CopilotItem label="Compensation Summary" value={copilot.compensationSummary} />
+                  <CopilotItem label="Notice Summary" value={copilot.noticeSummary} />
+                </div>
+                <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Recruiter recommendation: </span>{copilot.recruiterRecommendation}
+                </div>
+              </div>
+              <div className="rounded-xl bg-card p-5 shadow-sm">
+                <h3 className="font-display text-lg font-semibold">Agency Memory</h3>
+                <div className="mt-4 space-y-2">
+                  <MemoryLine label="Previously Submitted" active={memory.previouslySubmitted} />
+                  <MemoryLine label="Previously Interviewed" active={memory.previouslyInterviewed} />
+                  <MemoryLine label="Previously Offered" active={memory.previouslyOffered} />
+                  <MemoryLine label="Previously Joined" active={memory.previouslyJoined} />
+                  <MemoryLine label="Previously Rejected" active={memory.previouslyRejected} />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-xl bg-card p-5 shadow-sm">
             <h3 className="font-display text-lg font-semibold">Action Center</h3>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -148,6 +207,19 @@ export function SubmissionIntelligenceClient({ rows }: { rows: Row[] }) {
       )}
     </section>
   );
+}
+
+function CopilotItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm">{value}</div>
+    </div>
+  );
+}
+
+function MemoryLine({ label, active }: { label: string; active: boolean }) {
+  return <div className={active ? "rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-800" : "rounded-lg border bg-background p-3 text-sm text-muted-foreground"}>{active ? "Yes" : "No"} · {label}</div>;
 }
 
 function Score({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {

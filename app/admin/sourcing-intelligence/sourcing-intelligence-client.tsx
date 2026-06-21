@@ -19,6 +19,7 @@ import {
   LinkIcon,
   ListChecks,
   MapPin,
+  Network,
   Radar,
   RefreshCw,
   Search,
@@ -51,6 +52,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StageBadge } from "@/components/workspace/stage-badge";
+import {
+  buildAgencyMemory,
+  buildResumeIntelligence,
+  buildSubmissionCopilot,
+  buildTalentGraph,
+} from "@/lib/talent-intelligence";
 import { cn } from "@/lib/utils";
 
 export type SourcingCandidate = {
@@ -163,6 +170,7 @@ type ParsedQuery = {
   minExperience: number | null;
   maxNotice: number | null;
   maxComp: number | null;
+  targetCount: number | null;
   queryTokens: string[];
 };
 
@@ -453,6 +461,7 @@ function jobParsedQuery(job: SourcingJob): ParsedQuery {
     minExperience: job.experienceMin || null,
     maxNotice: jobRequiredNotice(job),
     maxComp: job.salaryMax,
+    targetCount: job.openings,
     queryTokens: tokens(`${job.title} ${job.skills.join(" ")} ${job.location}`),
   };
 }
@@ -483,6 +492,20 @@ function buildJobSupplySignals(jobs: SourcingJob[], candidates: SourcingCandidat
         : "Broaden search criteria or import adjacent profiles.";
     return { job, strong, medium, weak, supplyGap, missingSkills, missingLocations, recommendedAction };
   });
+}
+
+function buildQueryIntelligence(results: ScoredCandidate[], parsed: ParsedQuery) {
+  const strong = results.filter((result) => result.score >= 85);
+  const medium = results.filter((result) => result.score >= 70 && result.score < 85);
+  const weak = results.filter((result) => result.score >= 50 && result.score < 70);
+  const target = parsed.targetCount ?? Math.max(5, parsed.role ? 10 : 8);
+  const supplyGap = Math.max(0, target - strong.length - medium.length);
+  const matchedSkillSet = new Set(results.flatMap((result) => result.matched.map(normalize)));
+  const missingSkills = parsed.targetSkills.filter((skill) => !matchedSkillSet.has(normalize(skill)));
+  const recommendedAction = supplyGap > 0
+    ? `Import ${supplyGap}+ more ${missingSkills[0] ?? parsed.role ?? "qualified"} profiles from Naukri exports, resume batches, LinkedIn manual imports, or official public APIs.`
+    : "Prioritize strong matches, verify compensation and notice, then move the best profiles to submission.";
+  return { strong, medium, weak, supplyGap, missingSkills, recommendedAction };
 }
 
 function getKnownSkills(candidates: SourcingCandidate[]) {
@@ -526,6 +549,7 @@ function parseQuery(query: string, candidates: SourcingCandidate[]): ParsedQuery
   const exp = query.match(/(\d+)\s*\+\s*(?:years?|yrs?|exp|experience)?/i) ?? query.match(/(\d+)\s*(?:years?|yrs?)/i);
   const notice = query.match(/(?:notice|join|joining).*?(\d+)/i);
   const comp = query.match(/(?:under|below|max|upto|up to)\s*(\d+(?:\.\d+)?)\s*(?:lpa|ctc)?/i);
+  const target = query.match(/(?:need|find|source|shortlist)\s+(\d+)\b/i);
 
   return {
     role: roleTokens.slice(0, 4).join(" ") || null,
@@ -534,6 +558,7 @@ function parseQuery(query: string, candidates: SourcingCandidate[]): ParsedQuery
     minExperience: exp ? Number(exp[1]) : null,
     maxNotice: notice ? Number(notice[1]) : null,
     maxComp: comp ? Number(comp[1]) * 100000 : null,
+    targetCount: target ? Number(target[1]) : null,
     queryTokens,
   };
 }
@@ -857,6 +882,8 @@ export function SourcingIntelligenceClient({
   const allScored = useMemo(() => candidates.map((candidate) => scoreCandidate(candidate, parsed)), [candidates, parsed]);
   const results = useMemo(() => allScored.filter((result) => passesFilters(result, filters)).sort((a, b) => b.score - a.score), [allScored, filters]);
   const topResults = results.slice(0, 18);
+  const queryIntelligence = useMemo(() => buildQueryIntelligence(results, parsed), [results, parsed]);
+  const talentGraph = useMemo(() => buildTalentGraph(candidates, jobs), [candidates, jobs]);
   const jobSignals = useMemo(() => buildJobSupplySignals(jobs, candidates), [jobs, candidates]);
   const selectedJobSignal = jobSignals.find((signal) => signal.job.id === selectedJobId) ?? jobSignals[0] ?? null;
   const shortlisted = useMemo(() => shortlistIds.map((id) => allScored.find((result) => result.candidate.id === id)).filter(Boolean) as ScoredCandidate[], [allScored, shortlistIds]);
@@ -1080,6 +1107,8 @@ export function SourcingIntelligenceClient({
             setFilters={setFilters}
             results={topResults}
             totalResults={results.length}
+            queryIntelligence={queryIntelligence}
+            talentGraph={talentGraph}
             shortlistIds={shortlistIds}
             compareIds={compareIds}
             toggleShortlist={toggleShortlist}
@@ -1366,6 +1395,8 @@ function DiscoveryWorkbench(props: {
   setFilters: (value: Filters) => void;
   results: ScoredCandidate[];
   totalResults: number;
+  queryIntelligence: ReturnType<typeof buildQueryIntelligence>;
+  talentGraph: ReturnType<typeof buildTalentGraph>;
   shortlistIds: string[];
   compareIds: string[];
   toggleShortlist: (id: string) => void;
@@ -1393,6 +1424,7 @@ function DiscoveryWorkbench(props: {
         <div className="mt-3 flex flex-wrap gap-2">
           {examples.map((example) => <button key={example} type="button" onClick={() => props.setQuery(example)} className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary">{example}</button>)}
         </div>
+        <QueryIntelligencePanel intelligence={props.queryIntelligence} />
         {props.actionMessage && <div className="mt-4 rounded-lg border bg-muted/40 p-3 text-sm">{props.actionMessage}</div>}
         <div className="mt-5 space-y-3">
           {props.results.map((result) => (
@@ -1410,8 +1442,73 @@ function DiscoveryWorkbench(props: {
           {props.results.length === 0 && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No candidates match the current query and filters.</div>}
         </div>
       </div>
-      <IntentPanel parsed={props.parsed} />
+      <div className="space-y-6">
+        <IntentPanel parsed={props.parsed} />
+        <TalentGraphPanel graph={props.talentGraph} />
+      </div>
     </section>
+  );
+}
+
+function QueryIntelligencePanel({ intelligence }: { intelligence: ReturnType<typeof buildQueryIntelligence> }) {
+  return (
+    <div className="mt-4 rounded-lg border bg-background p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <div>
+            <div className="text-sm font-semibold">AI Recruiter Query</div>
+            <div className="text-xs text-muted-foreground">Strong, medium and weak matches from current filters.</div>
+          </div>
+        </div>
+        <Badge variant={intelligence.supplyGap > 0 ? "secondary" : "default"}>Supply Gap {intelligence.supplyGap}</Badge>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <Mini label="Strong" value={intelligence.strong.length} />
+        <Mini label="Medium" value={intelligence.medium.length} />
+        <Mini label="Weak" value={intelligence.weak.length} />
+      </div>
+      <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+        {intelligence.recommendedAction}
+      </div>
+      {intelligence.missingSkills.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {intelligence.missingSkills.map((skill) => <Badge key={skill} variant="outline">Missing {skill}</Badge>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TalentGraphPanel({ graph }: { graph: ReturnType<typeof buildTalentGraph> }) {
+  return (
+    <aside className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <Network className="h-5 w-5 text-primary" />
+        <h2 className="font-display text-lg font-semibold">Talent Graph</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">Candidate relationships across skills, roles, companies, industries, locations, clients and open jobs.</p>
+      <div className="mt-5 space-y-3">
+        <GraphGroup label="Skills" values={graph.skills} />
+        <GraphGroup label="Roles" values={graph.roles} />
+        <GraphGroup label="Companies" values={graph.companies} />
+        <GraphGroup label="Industries" values={graph.industries} />
+        <GraphGroup label="Locations" values={graph.locations} />
+        <GraphGroup label="Clients" values={graph.clients} />
+        <GraphGroup label="Open Jobs" values={graph.openJobs} />
+      </div>
+    </aside>
+  );
+}
+
+function GraphGroup({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div>
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {values.length ? values.slice(0, 6).map((value) => <Badge key={value} variant="secondary" className="font-normal">{value}</Badge>) : <span className="text-sm text-muted-foreground">Not enough data</span>}
+      </div>
+    </div>
   );
 }
 
@@ -1926,10 +2023,13 @@ function FutureApiConnector() {
 }
 
 function CandidateDrawer({ selected, setSelected }: { selected: ScoredCandidate | null; setSelected: (value: ScoredCandidate | null) => void }) {
+  const resumeIntelligence = selected ? buildResumeIntelligence(selected.candidate, selected.candidate.applications[0]?.job?.skills ?? []) : null;
+  const submissionCopilot = selected ? buildSubmissionCopilot(selected.candidate, selected.candidate.applications[0]?.job ?? null) : null;
+  const memory = selected ? buildAgencyMemory(selected.candidate.applications) : null;
   return (
     <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-        {selected && (
+        {selected && resumeIntelligence && submissionCopilot && memory && (
           <>
             <SheetHeader><SheetTitle>{selected.candidate.name}</SheetTitle><SheetDescription>{selected.candidate.currentDesignation ?? "Candidate"} at {selected.candidate.currentCompany ?? "current company not specified"}</SheetDescription></SheetHeader>
             <div className="mt-6 space-y-6">
@@ -1942,12 +2042,52 @@ function CandidateDrawer({ selected, setSelected }: { selected: ScoredCandidate 
               </div>
               <div><div className="mb-2 text-sm font-medium">Skills</div><div className="flex flex-wrap gap-1.5">{selected.candidate.skills.map((skill) => <Badge key={skill} variant="secondary" className="font-normal">{skill}</Badge>)}</div></div>
               <div className="grid gap-3 sm:grid-cols-2"><ExplainabilityList title="Missing" values={selected.missing} /><ExplainabilityList title="Risks" values={selected.risks} /></div>
+              <div className="rounded-lg border p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Resume Intelligence</div>
+                <p className="text-sm text-muted-foreground">{resumeIntelligence.executiveSummary}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Badge>{resumeIntelligence.industry}</Badge>
+                  <Badge variant="secondary">{resumeIntelligence.seniority}</Badge>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <ExplainabilityList title="Strengths" values={resumeIntelligence.strengths} positive />
+                  <ExplainabilityList title="Interview Questions" values={resumeIntelligence.interviewQuestions} positive />
+                  <ExplainabilityList title="Similar Jobs" values={resumeIntelligence.similarJobs} positive />
+                  <ExplainabilityList title="Missing Information" values={resumeIntelligence.missing} />
+                </div>
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Network className="h-4 w-4 text-primary" /> Agency Memory</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <MemoryBadge label="Submitted" active={memory.previouslySubmitted} />
+                  <MemoryBadge label="Interviewed" active={memory.previouslyInterviewed} />
+                  <MemoryBadge label="Offered" active={memory.previouslyOffered} />
+                  <MemoryBadge label="Joined" active={memory.previouslyJoined} />
+                  <MemoryBadge label="Rejected" active={memory.previouslyRejected} />
+                </div>
+              </div>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><Send className="h-4 w-4 text-primary" /> Submission Copilot</div>
+                <div className="space-y-3 text-sm">
+                  <Info label="Candidate Summary" value={submissionCopilot.candidateSummary} />
+                  <Info label="Why Fit" value={submissionCopilot.whyFit} />
+                  <Info label="Skills Match" value={submissionCopilot.skillsMatch} />
+                  <Info label="Relevant Experience" value={submissionCopilot.relevantExperience} />
+                  <Info label="Compensation" value={submissionCopilot.compensationSummary} />
+                  <Info label="Notice" value={submissionCopilot.noticeSummary} />
+                  <Info label="Recruiter Recommendation" value={submissionCopilot.recruiterRecommendation} />
+                </div>
+              </div>
             </div>
           </>
         )}
       </SheetContent>
     </Sheet>
   );
+}
+
+function MemoryBadge({ label, active }: { label: string; active: boolean }) {
+  return <div className={cn("rounded-lg border p-3 text-sm", active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800" : "bg-background text-muted-foreground")}><span className="font-medium">{active ? "Yes" : "No"}</span> · {label}</div>;
 }
 
 function Signal({ label, value }: { label: string; value: string }) {

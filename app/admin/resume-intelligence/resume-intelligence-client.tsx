@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { buildResumeIntelligence } from "@/lib/talent-intelligence";
 import { cn } from "@/lib/utils";
 
 type ParsedResume = Record<string, any>;
@@ -83,6 +84,10 @@ export function ResumeIntelligenceClient() {
   const selectedParsed = selected?.parsed ?? null;
   const missing = useMemo(() => missingFields(selected?.parsed ?? null), [selected]);
   const score = useMemo(() => confidence(selected?.parsed ?? null), [selected]);
+  const intelligence = useMemo(() => selectedParsed ? buildResumeIntelligence({
+    ...selectedParsed,
+    aiSummary: selectedParsed.executiveSummary ?? selectedParsed.summary,
+  }) : null, [selectedParsed]);
 
   function addFiles(files?: FileList | null) {
     if (!files) return;
@@ -186,6 +191,29 @@ export function ResumeIntelligenceClient() {
           </div>
         </div>
 
+        {intelligence && (
+          <div className="rounded-xl bg-card p-5 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="font-display text-xl font-semibold">AI Talent Intelligence</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{intelligence.executiveSummary}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge>{String(selectedParsed?.industry ?? intelligence.industry)}</Badge>
+                <Badge variant="secondary">{String(selectedParsed?.seniority ?? intelligence.seniority)}</Badge>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              <ResumeIntelBlock title="Strengths" values={stringArrayOr(selectedParsed?.strengths, intelligence.strengths)} positive />
+              <ResumeIntelBlock title="Risks" values={stringArrayOr(selectedParsed?.risks, intelligence.risks)} />
+              <ResumeIntelBlock title="Missing Information" values={stringArrayOr(selectedParsed?.missingInformation ?? selectedParsed?.missing_information, intelligence.missing)} />
+              <ResumeIntelBlock title="Interview Questions" values={stringArrayOr(selectedParsed?.interviewQuestions ?? selectedParsed?.interview_questions, intelligence.interviewQuestions)} positive />
+              <ResumeIntelBlock title="Similar Jobs" values={stringArrayOr(selectedParsed?.similarJobs ?? selectedParsed?.similar_jobs, intelligence.similarJobs)} positive />
+              <ResumeIntelBlock title="Skills Extracted" values={Array.isArray(selectedParsed?.skills) ? (selectedParsed?.skills as string[]) : intelligence.matchedSkills} positive />
+            </div>
+          </div>
+        )}
+
         <div className="rounded-xl bg-card p-5 shadow-sm">
           {selectedParsed ? (
             <>
@@ -207,6 +235,12 @@ export function ResumeIntelligenceClient() {
                 <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Summary</span>
                 <Textarea value={String(selectedParsed.summary ?? "")} onChange={(event) => updateField("summary", event.target.value)} rows={4} />
               </label>
+              {["executiveSummary", "industry", "seniority", "strengths", "risks", "missingInformation", "interviewQuestions", "similarJobs"].map((field) => (
+                <label key={field} className="mt-4 block text-sm">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">{field.replace(/([A-Z])/g, " $1")}</span>
+                  <Textarea value={Array.isArray(selectedParsed[field]) ? selectedParsed[field].join(", ") : String(selectedParsed[field] ?? "")} onChange={(event) => updateField(field, event.target.value)} rows={2} />
+                </label>
+              ))}
               <div className="mt-5 flex justify-end">
                 <Button disabled={saving || !selectedParsed.name || !selectedParsed.email} onClick={saveCandidate}><Save className="h-4 w-4" /> Save Reviewed Candidate</Button>
               </div>
@@ -217,5 +251,24 @@ export function ResumeIntelligenceClient() {
         </div>
       </div>
     </section>
+  );
+}
+
+function stringArrayOr(value: unknown, fallback: string[]) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return value.split(/[;,|]/).map((item) => item.trim()).filter(Boolean);
+  return fallback;
+}
+
+function ResumeIntelBlock({ title, values, positive = false }: { title: string; values: string[]; positive?: boolean }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="space-y-1.5">
+        {values.length ? values.slice(0, 5).map((value) => (
+          <div key={value} className={positive ? "text-sm text-emerald-700" : "text-sm text-amber-700"}>{value}</div>
+        )) : <div className="text-sm text-muted-foreground">None detected</div>}
+      </div>
+    </div>
   );
 }

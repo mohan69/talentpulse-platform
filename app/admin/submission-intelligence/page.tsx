@@ -29,7 +29,33 @@ async function loadApplications() {
 
 export default async function SubmissionIntelligencePage() {
   const applications = await loadApplications();
-  const rows = applications.map(computeApplicationIntelligence).sort((a, b) => b.revenuePotential - a.revenuePotential);
+  const rows = applications.map((app) => ({
+    ...computeApplicationIntelligence(app),
+    candidate: {
+      name: app.candidate.name,
+      email: app.candidate.email,
+      phone: app.candidate.phone,
+      currentCity: app.candidate.currentCity,
+      currentCompany: app.candidate.currentCompany,
+      currentDesignation: app.candidate.currentDesignation,
+      totalExperience: app.candidate.totalExperience,
+      relevantExperience: app.candidate.relevantExperience,
+      skills: app.candidate.skills,
+      currentCtc: app.candidate.currentCtc,
+      expectedCtc: app.candidate.expectedCtc,
+      noticePeriod: app.candidate.noticePeriod,
+      aiSummary: app.candidate.aiSummary,
+      source: app.candidate.source,
+    },
+    job: {
+      title: app.job.title,
+      location: app.job.location,
+      skills: app.job.skills,
+      salaryMin: app.job.salaryMin,
+      salaryMax: app.job.salaryMax,
+      client: app.job.client ? { name: app.job.client.name } : null,
+    },
+  })).sort((a, b) => b.revenuePotential - a.revenuePotential);
   const funnel = funnelStages.map((stage) => ({
     stage,
     count: stage === "Revenue" ? rows.filter((row) => row.stage === "JOINED").length : applications.filter((app) => stageBucket(app.stage) === stage).length,
