@@ -1,13 +1,16 @@
 "use client";
 
+import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Archive,
   BarChart3,
   Briefcase,
+  CalendarDays,
   Check,
   ChevronRight,
+  ClipboardList,
   Clock,
   Database,
   Download,
@@ -24,11 +27,14 @@ import {
   RefreshCw,
   Search,
   Send,
+  ShieldCheck,
   Sparkles,
   Upload,
   UserCheck,
+  UserCog,
   UserRound,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -139,7 +145,40 @@ export type DiscoveryConfig = {
   googleEnabled: boolean;
 };
 
-type WorkbenchMode = "jobs" | "discover" | "import" | "resumes" | "public" | "leads" | "api";
+export type ManagedRecruiter = { id: string; name: string | null; email: string; role: string };
+export type ManagedPortal = {
+  id: string;
+  name: string;
+  websiteUrl: string | null;
+  description: string | null;
+  isActive: boolean;
+  subscriptions: {
+    id: string;
+    recruiterId: string;
+    username: string | null;
+    planName: string | null;
+    profileLimit: number | null;
+    jobPostLimit: number | null;
+    profilesUsed: number;
+    jobsPosted: number;
+    monthlyCost: number | null;
+    validUntil: string | Date | null;
+    isActive: boolean;
+    notes: string | null;
+    recruiter: { id: string; name: string | null; email: string };
+  }[];
+};
+export type ManagedOpsActivity = {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  metadata: Record<string, any> | null;
+  createdAt: string | Date;
+  user?: { id: string; name: string | null; email: string } | null;
+};
+
+type WorkbenchMode = "jobs" | "discover" | "managed" | "import" | "resumes" | "public" | "leads" | "api";
 type ImportMode = "csv" | "naukri" | "linkedin";
 
 type ImportRow = {
@@ -259,6 +298,32 @@ const examples = [
   "Find Plant Operations Heads with Lean Six Sigma",
   "Find candidates ready for submission this week",
 ];
+
+const managedPortalCatalog = [
+  "Naukri",
+  "LinkedIn Recruiter",
+  "Foundit",
+  "Indeed",
+  "Instahyre",
+  "Weekday",
+  "Cutshort",
+  "Hirist",
+  "IIMJobs",
+  "Shine",
+  "GitHub",
+  "Google PSE",
+];
+
+function allowedImportMethod(portalName: string) {
+  const name = portalName.toLowerCase();
+  if (name.includes("github")) return "Official API / public profile import";
+  if (name.includes("google")) return "Google Programmable Search API";
+  if (name.includes("linkedin")) return "Recruiter-authorized export/manual import";
+  if (name.includes("naukri") || name.includes("foundit") || name.includes("indeed") || name.includes("instahyre") || name.includes("weekday") || name.includes("cutshort") || name.includes("hirist") || name.includes("iimjobs") || name.includes("shine")) {
+    return "Subscription export, CSV/XLSX, or resume download";
+  }
+  return "Recruiter-authorized export/import";
+}
 
 const recruiterActions = [
   "Screen Now",
@@ -849,17 +914,96 @@ function distribution(values: string[], limit = 8) {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([label, count]) => ({ label, count }));
 }
 
+function metadataOf(activity: ManagedOpsActivity) {
+  return (activity.metadata ?? {}) as Record<string, any>;
+}
+
+function operationAssignments(activities: ManagedOpsActivity[]) {
+  const latest = new Map<string, ManagedOpsActivity>();
+  for (const activity of activities.filter((item) => item.entityType === "managed_sourcing_assignment")) {
+    if (!latest.has(activity.entityId)) latest.set(activity.entityId, activity);
+  }
+  return Array.from(latest.values());
+}
+
+function operationSearchLogs(activities: ManagedOpsActivity[]) {
+  return activities.filter((item) => item.entityType === "portal_search_log");
+}
+
+function operationDeliveries(activities: ManagedOpsActivity[]) {
+  return activities.filter((item) => item.entityType === "customer_delivery_package");
+}
+
+function portalSourceKey(name: string) {
+  const normalizedName = name.toLowerCase();
+  if (normalizedName.includes("naukri")) return "NAUKRI";
+  if (normalizedName.includes("linkedin")) return "LINKEDIN";
+  if (normalizedName.includes("github") || normalizedName.includes("google")) return "DIRECT";
+  return "OTHER";
+}
+
+function portalRegistryRows(portals: ManagedPortal[]) {
+  return managedPortalCatalog.map((portalName) => {
+    const platform = portals.find((portal) => normalize(portal.name) === normalize(portalName) || normalize(portal.name).includes(normalize(portalName)) || normalize(portalName).includes(normalize(portal.name)));
+    const activeSubs = platform?.subscriptions.filter((sub) => sub.isActive) ?? [];
+    const primary = activeSubs[0] ?? platform?.subscriptions[0] ?? null;
+    const credits = primary?.profileLimit ? Math.max(0, primary.profileLimit - primary.profilesUsed) : primary?.jobPostLimit ? Math.max(0, primary.jobPostLimit - primary.jobsPosted) : null;
+    const expired = primary?.validUntil ? new Date(primary.validUntil) < new Date() : false;
+    return {
+      portalName,
+      configuredName: platform?.name ?? portalName,
+      subscriptionOwner: primary?.recruiter?.name ?? primary?.recruiter?.email ?? "Not assigned",
+      loginOwner: primary?.username ?? primary?.recruiter?.email ?? "Not assigned",
+      planType: primary?.planName ?? "Not configured",
+      monthlyCost: primary?.monthlyCost ?? 0,
+      availableCredits: credits,
+      expiryDate: primary?.validUntil ?? null,
+      usageNotes: primary?.notes ?? platform?.description ?? "",
+      allowedImportMethod: allowedImportMethod(portalName),
+      status: !platform ? "Not configured" : !primary ? "Needs subscription" : expired ? "Expired" : primary.isActive ? "Active" : "Paused",
+    };
+  });
+}
+
+function timeRemaining(deadline: string | null | undefined) {
+  if (!deadline) return "No deadline";
+  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000);
+  if (Number.isNaN(days)) return "No deadline";
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return "Due today";
+  return `${days}d left`;
+}
+
+function slaStatus(target: number, shortlisted: number, deadline: string | null | undefined) {
+  const overdue = deadline ? new Date(deadline).getTime() < Date.now() : false;
+  if (shortlisted >= target) return "On Track";
+  if (overdue) return "Overdue";
+  if (target > 0 && shortlisted / target >= 0.6) return "Watch";
+  return "At Risk";
+}
+
+function formatMoney(value: number) {
+  if (!value) return "Rs 0";
+  return `Rs ${Math.round(value).toLocaleString("en-IN")}`;
+}
+
 export function SourcingIntelligenceClient({
   candidates,
   jobs,
   leads,
   discoveryConfig,
+  managedPortals,
+  recruiters,
+  managedActivities,
   loadError,
 }: {
   candidates: SourcingCandidate[];
   jobs: SourcingJob[];
   leads: CandidateLead[];
   discoveryConfig: DiscoveryConfig;
+  managedPortals: ManagedPortal[];
+  recruiters: ManagedRecruiter[];
+  managedActivities: ManagedOpsActivity[];
   loadError?: string;
 }) {
   const [mode, setMode] = useState<WorkbenchMode>("jobs");
@@ -884,6 +1028,7 @@ export function SourcingIntelligenceClient({
   const [publicSearching, setPublicSearching] = useState(false);
   const [publicMessage, setPublicMessage] = useState<string | null>(null);
   const [publicLeads, setPublicLeads] = useState<PublicLead[]>([]);
+  const [opsActivities, setOpsActivities] = useState<ManagedOpsActivity[]>(managedActivities);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("talentpulse_sourcing_shortlist");
@@ -909,6 +1054,10 @@ export function SourcingIntelligenceClient({
   const shortlisted = useMemo(() => shortlistIds.map((id) => allScored.find((result) => result.candidate.id === id)).filter(Boolean) as ScoredCandidate[], [allScored, shortlistIds]);
   const compared = useMemo(() => compareIds.map((id) => allScored.find((result) => result.candidate.id === id)).filter(Boolean) as ScoredCandidate[], [allScored, compareIds]);
   const stats = useMemo(() => sourceStats(candidates, allScored, history), [candidates, allScored, history]);
+  const portalRegistry = useMemo(() => portalRegistryRows(managedPortals), [managedPortals]);
+  const assignments = useMemo(() => operationAssignments(opsActivities), [opsActivities]);
+  const searchLogs = useMemo(() => operationSearchLogs(opsActivities), [opsActivities]);
+  const deliveries = useMemo(() => operationDeliveries(opsActivities), [opsActivities]);
   const kpis = useMemo(() => {
     const active = candidates.filter((candidate) => !["REJECTED", "JOINED"].includes(latestStage(candidate))).length;
     const fresh = candidates.filter((candidate) => sourceFreshness(candidate) === "Fresh").length;
@@ -1089,6 +1238,7 @@ export function SourcingIntelligenceClient({
         {[
           { id: "jobs", label: "Requisition Sourcing", icon: Briefcase, copy: "Supply gap by open job." },
           { id: "discover", label: "Talent Repository", icon: Radar, copy: "Search local and imported profiles." },
+          { id: "managed", label: "Managed Ops", icon: UserCog, copy: "Portal assignments, SLA and ROI." },
           { id: "import", label: "Upload CSV/XLSX", icon: FileSpreadsheet, copy: "Naukri exports and LinkedIn manual files." },
           { id: "resumes", label: "Upload Resumes", icon: FileText, copy: "Queue PDF/DOCX extraction." },
           { id: "public", label: "Public Discovery", icon: Globe2, copy: "Official APIs only, no scraping." },
@@ -1168,6 +1318,20 @@ export function SourcingIntelligenceClient({
           setPreviewRows={setPreviewRows}
           importSelectedRows={importSelectedRows}
           history={history}
+        />
+      )}
+
+      {mode === "managed" && (
+        <ManagedSourcingOperations
+          portalRegistry={portalRegistry}
+          recruiters={recruiters}
+          jobs={jobs}
+          candidates={candidates}
+          allScored={allScored}
+          assignments={assignments}
+          searchLogs={searchLogs}
+          deliveries={deliveries}
+          setOpsActivities={setOpsActivities}
         />
       )}
 
@@ -1808,6 +1972,492 @@ function SourceAndCharts({ stats, charts }: { stats: ReturnType<typeof sourceSta
           <BarBlock title="Experience Distribution" data={charts.experience} />
           <BarBlock title="Freshness Distribution" data={charts.freshness} />
         </div>
+      </div>
+    </section>
+  );
+}
+
+function ManagedSourcingOperations({
+  portalRegistry,
+  recruiters,
+  jobs,
+  candidates,
+  allScored,
+  assignments,
+  searchLogs,
+  deliveries,
+  setOpsActivities,
+}: {
+  portalRegistry: ReturnType<typeof portalRegistryRows>;
+  recruiters: ManagedRecruiter[];
+  jobs: SourcingJob[];
+  candidates: SourcingCandidate[];
+  allScored: ScoredCandidate[];
+  assignments: ManagedOpsActivity[];
+  searchLogs: ManagedOpsActivity[];
+  deliveries: ManagedOpsActivity[];
+  setOpsActivities: Dispatch<SetStateAction<ManagedOpsActivity[]>>;
+}) {
+  const firstJob = jobs[0];
+  const activePortals = portalRegistry.filter((portal) => portal.status === "Active");
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [assignmentForm, setAssignmentForm] = useState({
+    jobId: firstJob?.id ?? "",
+    portalNames: activePortals.slice(0, 3).map((portal) => portal.portalName),
+    operatorId: recruiters[0]?.id ?? "",
+    targetCount: String(firstJob?.openings ?? 10),
+    deadline: "",
+    searchString: firstJob ? `${firstJob.title} ${firstJob.skills.join(" ")} ${firstJob.location}` : "",
+    mustHaveSkills: firstJob?.skills.join(", ") ?? "",
+    exclusions: "",
+  });
+  const assignmentRows = assignments.map((activity) => ({ activity, metadata: metadataOf(activity) }));
+  const selectedAssignment = assignmentRows[0] ?? null;
+  const [searchForm, setSearchForm] = useState({
+    assignmentId: selectedAssignment?.activity.entityId ?? "",
+    portalName: activePortals[0]?.portalName ?? portalRegistry[0]?.portalName ?? "Naukri",
+    searchQuery: "",
+    filtersUsed: "",
+    profilesViewed: "0",
+    candidatesExported: "0",
+    candidatesContacted: "0",
+    candidatesImported: "0",
+    notes: "",
+  });
+
+  async function saveOperation(type: "assignment" | "search_log" | "delivery", entityId: string, metadata: Record<string, any>) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/sourcing/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, entityId, metadata }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Operation save failed");
+      setOpsActivities((current) => [body, ...current]);
+      setMessage(type === "assignment" ? "Sourcing assignment saved." : type === "search_log" ? "Portal search log recorded." : "Customer delivery package prepared.");
+      return body as ManagedOpsActivity;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Operation save failed");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAssignment() {
+    const job = jobs.find((item) => item.id === assignmentForm.jobId);
+    const operator = recruiters.find((item) => item.id === assignmentForm.operatorId);
+    if (!job) {
+      setMessage("Select a requisition before saving assignment.");
+      return;
+    }
+    const entityId = `msa-${job.id}-${Date.now()}`;
+    await saveOperation("assignment", entityId, {
+      assignmentId: entityId,
+      jobId: job.id,
+      jobTitle: job.title,
+      clientName: job.client?.name ?? "Unassigned client",
+      portalNames: assignmentForm.portalNames,
+      operatorId: operator?.id ?? null,
+      operatorName: operator?.name ?? operator?.email ?? "Unassigned",
+      targetCount: Number(assignmentForm.targetCount || job.openings || 0),
+      deadline: assignmentForm.deadline || null,
+      searchString: assignmentForm.searchString,
+      mustHaveSkills: assignmentForm.mustHaveSkills.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+      exclusions: assignmentForm.exclusions.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+      status: "ACTIVE",
+    });
+  }
+
+  async function saveSearchLog() {
+    const assignmentId = searchForm.assignmentId || assignmentRows[0]?.activity.entityId;
+    if (!assignmentId) {
+      setMessage("Create or select an assignment before recording a search log.");
+      return;
+    }
+    await saveOperation("search_log", assignmentId, {
+      assignmentId,
+      portalName: searchForm.portalName,
+      searchQuery: searchForm.searchQuery,
+      filtersUsed: searchForm.filtersUsed,
+      profilesViewed: Number(searchForm.profilesViewed || 0),
+      candidatesExported: Number(searchForm.candidatesExported || 0),
+      candidatesContacted: Number(searchForm.candidatesContacted || 0),
+      candidatesImported: Number(searchForm.candidatesImported || 0),
+      notes: searchForm.notes,
+    });
+  }
+
+  const slaRows = assignmentRows.map(({ activity, metadata }) => {
+    const logs = searchLogs.filter((log) => metadataOf(log).assignmentId === activity.entityId);
+    const jobCandidates = candidates.filter((candidate) => candidate.applications.some((application) => application.job.id === metadata.jobId));
+    const target = Number(metadata.targetCount ?? 0);
+    const sourced = logs.reduce((sum, log) => sum + Number(metadataOf(log).candidatesImported ?? 0), 0);
+    const qualified = jobCandidates.filter((candidate) => allScored.find((result) => result.candidate.id === candidate.id && result.score >= 70)).length;
+    const shortlisted = jobCandidates.filter((candidate) => candidate.applications.some((application) => ["REVIEWED", "AI_SCREENING"].includes(application.stage))).length;
+    const submitted = jobCandidates.filter((candidate) => candidate.applications.some((application) => ["SUBMITTED", "INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    return {
+      activity,
+      metadata,
+      target,
+      sourced,
+      qualified,
+      shortlisted,
+      submitted,
+      remaining: timeRemaining(metadata.deadline),
+      status: slaStatus(target, shortlisted, metadata.deadline),
+    };
+  });
+  const selectedSla = slaRows[0] ?? null;
+  const selectedJobCandidates = selectedSla
+    ? candidates.filter((candidate) => candidate.applications.some((application) => application.job.id === selectedSla.metadata.jobId))
+    : candidates.slice(0, 8);
+  const deliveryCandidates = selectedJobCandidates
+    .map((candidate) => allScored.find((result) => result.candidate.id === candidate.id))
+    .filter(Boolean)
+    .sort((a, b) => (b?.score ?? 0) - (a?.score ?? 0))
+    .slice(0, 8) as ScoredCandidate[];
+  const sourceRoi = portalRegistry.map((portal) => {
+    const key = portalSourceKey(portal.portalName);
+    const logs = searchLogs.filter((log) => metadataOf(log).portalName === portal.portalName);
+    const portalCandidates = candidates.filter((candidate) => candidate.source === key || (key === "OTHER" && candidate.source === "OTHER"));
+    const shortlisted = portalCandidates.filter((candidate) => candidate.applications.some((application) => ["REVIEWED", "AI_SCREENING"].includes(application.stage))).length;
+    const submitted = portalCandidates.filter((candidate) => candidate.applications.some((application) => ["SUBMITTED", "INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    const interviewed = portalCandidates.filter((candidate) => candidate.applications.some((application) => ["INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).length;
+    const joined = portalCandidates.filter((candidate) => candidate.applications.some((application) => application.stage === "JOINED")).length;
+    const revenue = portalCandidates.filter((candidate) => candidate.applications.some((application) => application.stage === "JOINED")).reduce((sum, candidate) => sum + Math.round((candidate.expectedCtc ?? candidate.currentCtc ?? 0) * 0.08), 0);
+    const qualified = portalCandidates.filter((candidate) => candidateQualityScore(candidate) >= 60).length;
+    return {
+      portal,
+      searches: logs.length,
+      viewed: logs.reduce((sum, log) => sum + Number(metadataOf(log).profilesViewed ?? 0), 0),
+      imported: logs.reduce((sum, log) => sum + Number(metadataOf(log).candidatesImported ?? 0), 0) || portalCandidates.length,
+      shortlisted,
+      submitted,
+      interviewed,
+      joined,
+      revenue,
+      costPerQualified: qualified ? Math.round(portal.monthlyCost / qualified) : 0,
+      costPerPlacement: joined ? Math.round(portal.monthlyCost / joined) : 0,
+    };
+  });
+  const today = new Date().toDateString();
+  const todayAssignments = slaRows.filter((row) => new Date(row.activity.createdAt).toDateString() === today).length;
+  const overdueAssignments = slaRows.filter((row) => row.status === "Overdue").length;
+  const pendingReview = candidates.filter((candidate) => candidateQualityScore(candidate) < 60).length;
+  const duplicateKeys = new Set<string>();
+  const duplicateCount = candidates.filter((candidate) => {
+    const key = normalize(candidate.email || `${candidate.name}-${candidate.currentCompany ?? ""}`);
+    if (!key) return false;
+    if (duplicateKeys.has(key)) return true;
+    duplicateKeys.add(key);
+    return false;
+  }).length;
+  const pendingSubmissions = candidates.filter((candidate) => candidate.applications.some((application) => ["REVIEWED", "AI_SCREENING"].includes(application.stage))).length;
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-900">
+        <div className="flex items-start gap-2">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>Data is sourced via authorized subscriptions, public APIs, recruiter-owned exports, or candidate consent. Direct scraping and automated portal login are not enabled.</p>
+        </div>
+      </div>
+
+      {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
+
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]">
+        <PortalRegistryTable rows={portalRegistry} />
+        <OperatorDashboard
+          todayAssignments={todayAssignments}
+          overdueAssignments={overdueAssignments}
+          activePortals={activePortals.length}
+          pendingReview={pendingReview}
+          duplicateCount={duplicateCount}
+          pendingSubmissions={pendingSubmissions}
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+        <section className="rounded-xl bg-card p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-primary" />
+            <h2 className="font-display text-xl font-semibold">Sourcing Assignment</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">Assign subscription sources, operator, target count and deadline for a customer requisition.</p>
+          <div className="mt-4 space-y-3">
+            <SelectLike label="Customer Requisition" value={assignmentForm.jobId} onChange={(value) => {
+              const job = jobs.find((item) => item.id === value);
+              setAssignmentForm((current) => ({
+                ...current,
+                jobId: value,
+                targetCount: String(job?.openings ?? current.targetCount),
+                searchString: job ? `${job.title} ${job.skills.join(" ")} ${job.location}` : current.searchString,
+                mustHaveSkills: job?.skills.join(", ") ?? current.mustHaveSkills,
+              }));
+            }} options={jobs.map((job) => [job.id, `${job.title} - ${job.client?.name ?? "Client"}`])} />
+            <SelectLike label="Recruiter / Operator" value={assignmentForm.operatorId} onChange={(value) => setAssignmentForm((current) => ({ ...current, operatorId: value }))} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
+            <div className="grid grid-cols-2 gap-2">
+              <FilterInput label="Target Candidates" value={assignmentForm.targetCount} onChange={(value) => setAssignmentForm((current) => ({ ...current, targetCount: value }))} />
+              <FilterInput label="Deadline" value={assignmentForm.deadline} onChange={(value) => setAssignmentForm((current) => ({ ...current, deadline: value }))} />
+            </div>
+            <FilterInput label="Search String" value={assignmentForm.searchString} onChange={(value) => setAssignmentForm((current) => ({ ...current, searchString: value }))} />
+            <FilterInput label="Must-have Skills" value={assignmentForm.mustHaveSkills} onChange={(value) => setAssignmentForm((current) => ({ ...current, mustHaveSkills: value }))} />
+            <FilterInput label="Exclusion Criteria" value={assignmentForm.exclusions} onChange={(value) => setAssignmentForm((current) => ({ ...current, exclusions: value }))} />
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Portal Sources</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {portalRegistry.map((portal) => (
+                  <label key={portal.portalName} className="flex items-center gap-2 rounded-lg border p-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={assignmentForm.portalNames.includes(portal.portalName)}
+                      onChange={(event) => setAssignmentForm((current) => ({
+                        ...current,
+                        portalNames: event.target.checked
+                          ? [...current.portalNames, portal.portalName]
+                          : current.portalNames.filter((item) => item !== portal.portalName),
+                      }))}
+                    />
+                    <span>{portal.portalName}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Button disabled={saving || !assignmentForm.jobId} onClick={saveAssignment}><ClipboardList className="h-4 w-4" /> Save Assignment</Button>
+          </div>
+        </section>
+
+        <SlaDashboard rows={slaRows} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+        <section className="rounded-xl bg-card p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-primary" />
+            <h2 className="font-display text-xl font-semibold">Portal Search Log</h2>
+          </div>
+          <div className="mt-4 space-y-3">
+            <SelectLike label="Assignment" value={searchForm.assignmentId} onChange={(value) => setSearchForm((current) => ({ ...current, assignmentId: value }))} options={assignmentRows.map(({ activity, metadata }) => [activity.entityId, `${metadata.jobTitle ?? "Assignment"} - ${metadata.clientName ?? "Client"}`])} />
+            <SelectLike label="Portal Used" value={searchForm.portalName} onChange={(value) => setSearchForm((current) => ({ ...current, portalName: value }))} options={portalRegistry.map((portal) => [portal.portalName, portal.portalName])} />
+            <FilterInput label="Search Query" value={searchForm.searchQuery} onChange={(value) => setSearchForm((current) => ({ ...current, searchQuery: value }))} />
+            <FilterInput label="Filters Used" value={searchForm.filtersUsed} onChange={(value) => setSearchForm((current) => ({ ...current, filtersUsed: value }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <FilterInput label="Profiles Viewed" value={searchForm.profilesViewed} onChange={(value) => setSearchForm((current) => ({ ...current, profilesViewed: value }))} />
+              <FilterInput label="Exported" value={searchForm.candidatesExported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesExported: value }))} />
+              <FilterInput label="Contacted" value={searchForm.candidatesContacted} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesContacted: value }))} />
+              <FilterInput label="Imported" value={searchForm.candidatesImported} onChange={(value) => setSearchForm((current) => ({ ...current, candidatesImported: value }))} />
+            </div>
+            <Textarea value={searchForm.notes} onChange={(event) => setSearchForm((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Operator notes, edge cases, portal limitations..." />
+            <Button disabled={saving} onClick={saveSearchLog}><Search className="h-4 w-4" /> Record Search Log</Button>
+          </div>
+        </section>
+        <SearchLogTimeline logs={searchLogs} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+        <CustomerDeliveryPackage candidates={deliveryCandidates} selectedSla={selectedSla} saveOperation={saveOperation} saving={saving} />
+        <ImportWorkflowSummary selectedSla={selectedSla} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+        <SourceRoiTable rows={sourceRoi} />
+        <CustomerViewPanel candidates={selectedJobCandidates} deliveries={deliveries} />
+      </div>
+    </section>
+  );
+}
+
+function PortalRegistryTable({ rows }: { rows: ReturnType<typeof portalRegistryRows> }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <WalletCards className="h-5 w-5 text-primary" />
+        <h2 className="font-display text-xl font-semibold">Portal Subscription Registry</h2>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Owner</TableHead><TableHead>Plan</TableHead><TableHead>Credits</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.portalName}>
+                <TableCell><div className="font-medium">{row.configuredName}</div><div className="text-xs text-muted-foreground">{row.allowedImportMethod}</div></TableCell>
+                <TableCell><div>{row.subscriptionOwner}</div><div className="text-xs text-muted-foreground">{row.loginOwner}</div></TableCell>
+                <TableCell><div>{row.planType}</div><div className="text-xs text-muted-foreground">{formatMoney(row.monthlyCost)}/mo</div></TableCell>
+                <TableCell>{row.availableCredits ?? "Usage-based"}</TableCell>
+                <TableCell><Badge variant={row.status === "Active" ? "default" : row.status === "Expired" ? "destructive" : "secondary"}>{row.status}</Badge></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function OperatorDashboard({ todayAssignments, overdueAssignments, activePortals, pendingReview, duplicateCount, pendingSubmissions }: { todayAssignments: number; overdueAssignments: number; activePortals: number; pendingReview: number; duplicateCount: number; pendingSubmissions: number }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2"><UserCog className="h-5 w-5 text-primary" /><h2 className="font-display text-xl font-semibold">Operator Dashboard</h2></div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <Mini label="Today Assignments" value={todayAssignments} />
+        <Mini label="Overdue" value={overdueAssignments} />
+        <Mini label="Active Portals" value={activePortals} />
+        <Mini label="Pending Review" value={pendingReview} />
+        <Mini label="Duplicates" value={duplicateCount} />
+        <Mini label="Pending Submissions" value={pendingSubmissions} />
+      </div>
+    </section>
+  );
+}
+
+function SlaDashboard({ rows }: { rows: { activity: ManagedOpsActivity; metadata: Record<string, any>; target: number; sourced: number; qualified: number; shortlisted: number; submitted: number; remaining: string; status: string }[] }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" /><h2 className="font-display text-xl font-semibold">SLA Dashboard</h2></div>
+      <div className="mt-4 grid gap-3">
+        {rows.map((row) => (
+          <div key={row.activity.id} className="rounded-lg border p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><div className="font-semibold">{row.metadata.jobTitle ?? "Sourcing Assignment"}</div><div className="text-sm text-muted-foreground">{row.metadata.clientName ?? "Client"} · {row.metadata.operatorName ?? "Operator"} · {row.remaining}</div></div>
+              <Badge variant={row.status === "On Track" ? "default" : row.status === "Watch" ? "secondary" : "destructive"}>{row.status}</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-5 gap-2 text-xs">
+              <Mini label="Target" value={row.target} />
+              <Mini label="Sourced" value={row.sourced} />
+              <Mini label="Qualified" value={row.qualified} />
+              <Mini label="Shortlisted" value={row.shortlisted} />
+              <Mini label="Submitted" value={row.submitted} />
+            </div>
+            <Progress value={row.target ? Math.min(100, Math.round((row.shortlisted / row.target) * 100)) : 0} className="mt-3 h-2" />
+          </div>
+        ))}
+        {!rows.length && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No managed sourcing assignments yet.</div>}
+      </div>
+    </section>
+  );
+}
+
+function SearchLogTimeline({ logs }: { logs: ManagedOpsActivity[] }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <h2 className="font-display text-xl font-semibold">Recent Search Logs</h2>
+      <div className="mt-4 grid gap-3">
+        {logs.slice(0, 8).map((log) => {
+          const metadata = metadataOf(log);
+          return (
+            <div key={log.id} className="rounded-lg border p-3 text-sm">
+              <div className="flex items-start justify-between gap-2"><div className="font-medium">{metadata.portalName ?? "Portal"}</div><Badge variant="outline">{formatDate(log.createdAt)}</Badge></div>
+              <div className="mt-1 text-muted-foreground">{metadata.searchQuery ?? "Search query not recorded"}</div>
+              <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+                <Mini label="Viewed" value={metadata.profilesViewed ?? 0} />
+                <Mini label="Exported" value={metadata.candidatesExported ?? 0} />
+                <Mini label="Contacted" value={metadata.candidatesContacted ?? 0} />
+                <Mini label="Imported" value={metadata.candidatesImported ?? 0} />
+              </div>
+            </div>
+          );
+        })}
+        {!logs.length && <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No portal search logs recorded yet.</div>}
+      </div>
+    </section>
+  );
+}
+
+function ImportWorkflowSummary({ selectedSla }: { selectedSla: { metadata: Record<string, any> } | null }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <h2 className="font-display text-xl font-semibold">Import Workflow</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Use recruiter-authorized exports only. Imported rows are tagged by portal, customer, requisition and search batch through the import notes.</p>
+      <div className="mt-4 space-y-2 text-sm">
+        {["Upload CSV/XLSX/resumes", "Tag portal, customer and requisition", "Deduplicate by email, phone, name + company", "Score, shortlist and submit with approval"].map((item) => <div key={item} className="rounded-lg border p-3">{item}</div>)}
+      </div>
+      {selectedSla && <div className="mt-4 rounded-lg bg-muted/40 p-3 text-sm">Current assignment: {selectedSla.metadata.jobTitle ?? "Sourcing assignment"}</div>}
+    </section>
+  );
+}
+
+function CustomerDeliveryPackage({ candidates, selectedSla, saveOperation, saving }: { candidates: ScoredCandidate[]; selectedSla: { activity: ManagedOpsActivity; metadata: Record<string, any> } | null; saveOperation: (type: "assignment" | "search_log" | "delivery", entityId: string, metadata: Record<string, any>) => Promise<ManagedOpsActivity | null>; saving: boolean }) {
+  const rows = candidates.slice(0, 6);
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div><h2 className="font-display text-xl font-semibold">Customer Candidate Delivery</h2><p className="text-sm text-muted-foreground">Customer-facing shortlist package with match score, compensation, notice, notes and risks.</p></div>
+        <Button disabled={saving || !selectedSla || !rows.length} onClick={() => selectedSla && saveOperation("delivery", selectedSla.activity.entityId, { assignmentId: selectedSla.activity.entityId, candidateCount: rows.length, jobTitle: selectedSla.metadata.jobTitle, clientName: selectedSla.metadata.clientName })}><Send className="h-4 w-4" /> Prepare Package</Button>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader><TableRow><TableHead>Candidate</TableHead><TableHead>Score</TableHead><TableHead>Compensation</TableHead><TableHead>Notice</TableHead><TableHead>Resume</TableHead><TableHead>Recommendation</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.candidate.id}>
+                <TableCell><div className="font-medium">{row.candidate.name}</div><div className="text-xs text-muted-foreground">{row.candidate.currentDesignation ?? "Role"} · {row.candidate.currentCity ?? "Location"}</div></TableCell>
+                <TableCell>{row.score}</TableCell>
+                <TableCell>{row.candidate.expectedCtc ? formatMoney(row.candidate.expectedCtc) : row.candidate.currentCtc ? formatMoney(row.candidate.currentCtc) : "Not verified"}</TableCell>
+                <TableCell>{row.candidate.noticePeriod != null ? `${row.candidate.noticePeriod} days` : "Not verified"}</TableCell>
+                <TableCell>{row.candidate.aiSummary ? "Available" : "Needs update"}</TableCell>
+                <TableCell>{row.nextBestAction}</TableCell>
+              </TableRow>
+            ))}
+            {!rows.length && <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No shortlisted candidates available for the selected assignment yet.</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegistryRows>[number]; searches: number; viewed: number; imported: number; shortlisted: number; submitted: number; interviewed: number; joined: number; revenue: number; costPerQualified: number; costPerPlacement: number }[] }) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <h2 className="font-display text-xl font-semibold">Source ROI</h2>
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader><TableRow><TableHead>Portal</TableHead><TableHead>Cost</TableHead><TableHead>Searches</TableHead><TableHead>Viewed</TableHead><TableHead>Imported</TableHead><TableHead>Shortlisted</TableHead><TableHead>Submitted</TableHead><TableHead>Joined</TableHead><TableHead>Revenue</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {rows.filter((row) => row.portal.monthlyCost > 0 || row.searches > 0 || row.imported > 0).map((row) => (
+              <TableRow key={row.portal.portalName}>
+                <TableCell><div className="font-medium">{row.portal.portalName}</div><div className="text-xs text-muted-foreground">CPQ {formatMoney(row.costPerQualified)} · CPP {formatMoney(row.costPerPlacement)}</div></TableCell>
+                <TableCell>{formatMoney(row.portal.monthlyCost)}</TableCell>
+                <TableCell>{row.searches}</TableCell>
+                <TableCell>{row.viewed}</TableCell>
+                <TableCell>{row.imported}</TableCell>
+                <TableCell>{row.shortlisted}</TableCell>
+                <TableCell>{row.submitted}</TableCell>
+                <TableCell>{row.joined}</TableCell>
+                <TableCell>{formatMoney(row.revenue)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function CustomerViewPanel({ candidates, deliveries }: { candidates: SourcingCandidate[]; deliveries: ManagedOpsActivity[] }) {
+  const submitted = candidates.filter((candidate) => candidate.applications.some((application) => ["SUBMITTED", "INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED", "JOINED"].includes(application.stage))).slice(0, 8);
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-sm">
+      <h2 className="font-display text-xl font-semibold">Customer View</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Submitted candidates, pending feedback and hiring progress.</p>
+      <div className="mt-4 space-y-3">
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <Mini label="Submitted" value={submitted.length} />
+          <Mini label="Pending Feedback" value={submitted.filter((candidate) => candidate.applications.some((application) => application.stage === "SUBMITTED")).length} />
+          <Mini label="Packages" value={deliveries.length} />
+        </div>
+        {submitted.map((candidate) => (
+          <div key={candidate.id} className="rounded-lg border p-3 text-sm">
+            <div className="font-medium">{candidate.name}</div>
+            <div className="text-xs text-muted-foreground">{candidate.currentDesignation ?? "Role"} · {latestStage(candidate).replace(/_/g, " ")}</div>
+          </div>
+        ))}
+        {!submitted.length && <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No customer submissions for the selected assignment yet.</div>}
       </div>
     </section>
   );

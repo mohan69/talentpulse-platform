@@ -1,6 +1,10 @@
 import { PageTitle } from "@/components/workspace/page-title";
+import { prisma } from "@/lib/db";
 import { tenantPrisma } from "@/lib/repositories";
 import {
+  type ManagedOpsActivity,
+  type ManagedPortal,
+  type ManagedRecruiter,
   SourcingIntelligenceClient,
   type CandidateLead,
   type DiscoveryConfig,
@@ -136,8 +140,54 @@ function discoveryConfig(): DiscoveryConfig {
   };
 }
 
+async function loadManagedOps(): Promise<{
+  portals: ManagedPortal[];
+  recruiters: ManagedRecruiter[];
+  activities: ManagedOpsActivity[];
+}> {
+  try {
+    const [platforms, recruiters, activities] = await Promise.all([
+      prisma.recruitingPlatform.findMany({
+        orderBy: { name: "asc" },
+        include: {
+          subscriptions: {
+            include: { recruiter: { select: { id: true, name: true, email: true } } },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      }),
+      prisma.user.findMany({
+        where: { role: { in: ["ADMIN", "RECRUITER"] }, isActive: true },
+        select: { id: true, name: true, email: true, role: true },
+        orderBy: { name: "asc" },
+      }),
+      tenantPrisma.activityLog.findMany({
+        where: { entityType: { in: ["managed_sourcing_assignment", "portal_search_log", "customer_delivery_package"] } },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+        select: {
+          id: true,
+          entityType: true,
+          entityId: true,
+          action: true,
+          metadata: true,
+          createdAt: true,
+          user: { select: { id: true, name: true, email: true } },
+        },
+      }),
+    ]);
+    return {
+      portals: platforms as unknown as ManagedPortal[],
+      recruiters: recruiters as unknown as ManagedRecruiter[],
+      activities: activities as unknown as ManagedOpsActivity[],
+    };
+  } catch {
+    return { portals: [], recruiters: [], activities: [] };
+  }
+}
+
 export default async function AdminSourcingIntelligence() {
-  const [{ candidates, error }, jobs, leads] = await Promise.all([loadCandidates(), loadJobs(), loadLeads()]);
+  const [{ candidates, error }, jobs, leads, managedOps] = await Promise.all([loadCandidates(), loadJobs(), loadLeads(), loadManagedOps()]);
 
   return (
     <>
@@ -145,7 +195,16 @@ export default async function AdminSourcingIntelligence() {
         title="Sourcing Intelligence"
         description="Requisition-centric candidate acquisition, import quality, public discovery, freshness and source conversion intelligence."
       />
-      <SourcingIntelligenceClient candidates={candidates} jobs={jobs} leads={leads} discoveryConfig={discoveryConfig()} loadError={error} />
+      <SourcingIntelligenceClient
+        candidates={candidates}
+        jobs={jobs}
+        leads={leads}
+        discoveryConfig={discoveryConfig()}
+        managedPortals={managedOps.portals}
+        recruiters={managedOps.recruiters}
+        managedActivities={managedOps.activities}
+        loadError={error}
+      />
     </>
   );
 }
