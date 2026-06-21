@@ -114,12 +114,24 @@ export function profileCompleteness(candidate: RevenueApplication["candidate"]) 
     candidate.currentDesignation,
     candidate.totalExperience > 0,
     candidate.skills.length > 0,
-    candidate.currentCtc,
-    candidate.expectedCtc,
+    candidate.currentCtc || candidate.expectedCtc,
     candidate.noticePeriod !== null,
     candidate.aiSummary,
   ];
   return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+}
+
+function hasCriticalReadinessFields(candidate: RevenueApplication["candidate"]) {
+  return Boolean(
+    candidate.email &&
+    candidate.phone &&
+    candidate.skills.length > 0 &&
+    candidate.totalExperience > 0 &&
+    candidate.currentCity &&
+    candidate.noticePeriod !== null &&
+    (candidate.currentCtc !== null || candidate.expectedCtc !== null) &&
+    (candidate.aiSummary || candidate.source)
+  );
 }
 
 export function missingInformation(app: RevenueApplication) {
@@ -166,7 +178,8 @@ export function computeApplicationIntelligence(app: RevenueApplication) {
   const missing = missingInformation(app);
   const risks = riskIndicators(app);
   const stageWeight = Math.max(0, stageOrder[app.stage]) * 3;
-  const readiness = Math.min(100, Math.round(matchScore * 0.45 + completeness * 0.35 + stageWeight + Math.max(0, 20 - missing.length * 3)));
+  const rawReadiness = Math.round(matchScore * 0.4 + completeness * 0.38 + stageWeight + Math.max(0, 14 - missing.length * 4));
+  const readiness = Math.min(hasCriticalReadinessFields(app.candidate) ? 100 : 95, rawReadiness);
   const base = stageProbability[app.stage] ?? 0.1;
   const riskPenalty = risks.filter((risk) => risk !== "No major risk detected").length * 0.05;
   const qualityBoost = Math.max(0, readiness - 70) / 250;

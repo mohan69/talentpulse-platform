@@ -66,19 +66,20 @@ export default async function SubmissionIntelligencePage() {
     .reduce((sum, row) => sum + row.revenuePotential, 0);
   const highReady = rows.filter((row) => row.readiness >= 80).length;
   const joins = rows.filter((row) => row.stage === "JOINED").length;
+  const pipelineProgress = rows.filter((row) => ["SUBMITTED", "INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETE", "OFFER_EXTENDED", "OFFER_ACCEPTED"].includes(row.stage)).length;
 
   return (
     <>
       <PageTitle
         title="Submission Intelligence"
         description="Track progression from sourced candidate to submitted profile, offer, joining, and revenue."
-        actions={<Button asChild><Link href="/admin/resume-intelligence">Resume Intelligence</Link></Button>}
+        actions={<Button asChild><Link href="/admin/candidates">Talent Repository</Link></Button>}
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Metric label="Tracked Candidates" value={rows.length.toString()} />
         <Metric label="Ready To Submit" value={highReady.toString()} />
-        <Metric label="Joined" value={joins.toString()} />
+        <Metric label={joins > 0 ? "Joined" : "Pipeline Progress"} value={(joins > 0 ? joins : pipelineProgress).toString()} />
         <Metric label="Expected Revenue" value={formatCurrency(expectedRevenue)} />
         <Metric label="Revenue At Risk" value={formatCurrency(revenueAtRisk)} tone="risk" />
       </section>

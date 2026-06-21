@@ -333,17 +333,17 @@ function unique(values: string[]) {
 }
 
 function sourceLabel(source: string) {
-  if (source === "NAUKRI") return "Naukri Imports";
-  if (source === "LINKEDIN") return "LinkedIn Imports";
+  if (source === "NAUKRI") return "Naukri Candidates";
+  if (source === "LINKEDIN") return "LinkedIn Manual";
   if (source === "REFERRAL") return "Referrals";
-  if (source === "INTERNAL_DB") return "Internal Repository";
-  if (source === "OTHER") return "Resume Uploads";
-  if (source === "DIRECT") return "Public Discovery Leads";
+  if (source === "INTERNAL_DB") return "Talent Repository";
+  if (source === "OTHER") return "Resume Imports";
+  if (source === "DIRECT") return "Public Discovery";
   return "Other Sources";
 }
 
 function sourceShortLabel(source: string) {
-  return sourceLabel(source).replace(" Imports", "");
+  return sourceLabel(source).replace(" Candidates", "");
 }
 
 function sourceReliability(source: string) {
@@ -360,7 +360,7 @@ function isImportedSource(source: string) {
 }
 
 function dataBucket(source: string) {
-  return isImportedSource(source) ? "Real Imported Data" : "Demo Repository Data";
+  return isImportedSource(source) ? "Imported Candidate" : "Repository Data";
 }
 
 function toDate(value: string | Date) {
@@ -395,10 +395,27 @@ function profileCompleteness(candidate: SourcingCandidate) {
     candidate.totalExperience > 0,
     candidate.skills.length > 0,
     candidate.noticePeriod !== null,
-    candidate.expectedCtc !== null,
-    candidate.aiSummary,
+    candidate.currentCtc !== null || candidate.expectedCtc !== null,
+    hasSourceEvidence(candidate),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function hasAllCriticalFields(candidate: SourcingCandidate) {
+  return Boolean(
+    candidate.email &&
+    candidate.phone &&
+    candidate.skills.length > 0 &&
+    candidate.totalExperience > 0 &&
+    candidate.currentCity &&
+    candidate.noticePeriod !== null &&
+    (candidate.currentCtc !== null || candidate.expectedCtc !== null) &&
+    hasSourceEvidence(candidate)
+  );
+}
+
+function hasSourceEvidence(candidate: SourcingCandidate) {
+  return Boolean(candidate.aiSummary || candidate.linkedinUrl || isImportedSource(candidate.source) || candidate.source === "OTHER" || candidate.applications.length > 0);
 }
 
 function sourceFreshness(candidate: SourcingCandidate) {
@@ -425,15 +442,17 @@ function freshnessAge(candidate: SourcingCandidate) {
 }
 
 function candidateQualityScore(candidate: SourcingCandidate) {
-  const skillsCompleteness = Math.min(18, candidate.skills.length * 3);
-  const contact = (candidate.email ? 8 : 0) + (candidate.phone ? 8 : 0) + (candidate.linkedinUrl ? 4 : 0);
-  const resume = candidate.aiSummary || candidate.applications.length > 0 ? 10 : 0;
-  const experience = (candidate.totalExperience > 0 ? 8 : 0) + (candidate.currentCompany ? 5 : 0) + (candidate.currentDesignation ? 5 : 0);
-  const compensation = (candidate.currentCtc ? 6 : 0) + (candidate.expectedCtc ? 6 : 0);
-  const notice = candidate.noticePeriod !== null ? 8 : 0;
-  const freshness = sourceFreshness(candidate) === "Fresh" ? 12 : sourceFreshness(candidate) === "Aging" ? 7 : 2;
-  const source = sourceReliability(candidate.source) * 2;
-  return Math.min(100, skillsCompleteness + contact + resume + experience + compensation + notice + freshness + source);
+  const skillsCompleteness = Math.min(16, candidate.skills.length * 2.5);
+  const contact = (candidate.email ? 7 : 0) + (candidate.phone ? 9 : 0);
+  const evidence = hasSourceEvidence(candidate) ? 12 : 0;
+  const experience = (candidate.totalExperience > 0 ? 8 : 0) + (candidate.currentCompany ? 4 : 0) + (candidate.currentDesignation ? 5 : 0) + (candidate.currentCity ? 4 : 0);
+  const compensation = candidate.currentCtc || candidate.expectedCtc ? 10 : 0;
+  const notice = candidate.noticePeriod !== null ? 9 : 0;
+  const freshness = sourceFreshness(candidate) === "Fresh" ? 10 : sourceFreshness(candidate) === "Aging" ? 6 : 2;
+  const source = Math.min(10, sourceReliability(candidate.source));
+  const rawScore = Math.round(skillsCompleteness + contact + evidence + experience + compensation + notice + freshness + source);
+  const missingCritical = hasAllCriticalFields(candidate) ? 0 : 1;
+  return Math.min(missingCritical ? 95 : 100, rawScore);
 }
 
 function qualityLabel(score: number) {
@@ -623,7 +642,8 @@ function scoreCandidate(candidate: SourcingCandidate, parsed: ParsedQuery): Scor
     completeness: Math.round((completeness / 100) * 10),
     source: reliability,
   };
-  const score = Math.min(100, Object.values(componentScores).reduce((sum, value) => sum + value, 0));
+  const rawScore = Object.values(componentScores).reduce((sum, value) => sum + value, 0);
+  const score = Math.min(hasAllCriticalFields(candidate) ? 100 : 95, rawScore);
   const risks = [
     freshnessDays > 90 ? "stale profile" : null,
     completeness < 75 ? "incomplete profile" : null,
@@ -636,7 +656,7 @@ function scoreCandidate(candidate: SourcingCandidate, parsed: ParsedQuery): Scor
     : risks.includes("compensation unknown")
       ? "Verify Compensation"
       : risks.includes("availability unknown")
-        ? "Verify Notice Period"
+        ? "Verify Notice"
         : completeness < 70
           ? "Request Updated Resume"
           : score >= 75
@@ -818,9 +838,9 @@ function sourceStats(candidates: SourcingCandidate[], scored: ScoredCandidate[],
       offered,
       joined,
       conversionRate: rows.length ? Math.round((joined / rows.length) * 100) : 0,
-      health: rows.length === 0 ? "No Data" : duplicateRate > 10 || avgCompleteness < 60 ? "Review" : "Healthy",
+      health: duplicateRate > 10 || avgCompleteness < 60 ? "Review" : "Healthy",
     };
-  });
+  }).filter((item) => item.total > 0);
 }
 
 function distribution(values: string[], limit = 8) {
@@ -1535,7 +1555,7 @@ function AdvancedFilters({ filters, setFilters }: { filters: Filters; setFilters
           <FilterInput label="Max Expected CTC" value={filters.maxExpectedCtc} onChange={(value) => set("maxExpectedCtc", value)} />
         </div>
         <FilterInput label="Max Notice Period" value={filters.maxNotice} onChange={(value) => set("maxNotice", value)} />
-        <SelectLike label="Source" value={filters.source} onChange={(value) => set("source", value)} options={[["all", "All sources"], ["INTERNAL_DB", "Internal Repository"], ["NAUKRI", "Naukri"], ["LINKEDIN", "LinkedIn"], ["OTHER", "Resume Uploads"], ["REFERRAL", "Referrals"], ["DIRECT", "Public Discovery"]]} />
+        <SelectLike label="Source" value={filters.source} onChange={(value) => set("source", value)} options={[["all", "All sources"], ["INTERNAL_DB", "Talent Repository"], ["NAUKRI", "Naukri Candidates"], ["LINKEDIN", "LinkedIn Manual"], ["OTHER", "Resume Imports"], ["REFERRAL", "Referrals"], ["DIRECT", "Public Discovery"]]} />
         <SelectLike label="Freshness" value={filters.freshness} onChange={(value) => set("freshness", value)} options={[["all", "All"], ["fresh", "Fresh"], ["aging", "Aging"], ["stale", "Stale"]]} />
         <SelectLike label="Pipeline Stage" value={filters.stage} onChange={(value) => set("stage", value)} options={[["all", "All"], ["UNASSIGNED", "Unassigned"], ["NEW", "New"], ["REVIEWED", "Reviewed"], ["SUBMITTED", "Submitted"], ["INTERVIEW_SCHEDULED", "Interview Scheduled"]]} />
         <FilterInput label="Min Completeness" value={filters.minCompleteness} onChange={(value) => set("minCompleteness", value)} />
@@ -1582,6 +1602,7 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
   const candidate = result.candidate;
   const stage = latestStage(candidate);
   const quality = candidateQualityScore(candidate);
+  const moreActions = recruiterActions.filter((action) => action !== "Submit To Client");
   return (
     <div className="rounded-xl border bg-background p-4 transition-colors hover:border-primary/50">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1615,18 +1636,24 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
         <ExplainabilityList title="Missing" values={result.missing} />
         <ExplainabilityList title="Risks" values={result.risks} />
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={shortlisted ? "default" : "outline"} onClick={onShortlist}>{shortlisted ? "Remove Shortlist" : "Add to Shortlist"}</Button>
-          <Button size="sm" variant={compared ? "default" : "outline"} onClick={onCompare}><GitCompare className="h-4 w-4" /> Compare</Button>
+          <Button size="sm" variant={shortlisted ? "default" : "outline"} onClick={onShortlist}>{shortlisted ? "Remove Shortlist" : "Add Shortlist"}</Button>
+          <Button size="sm" onClick={() => onAction("Submit To Client")}><Send className="h-4 w-4" /> Submit To Client</Button>
+          <Button size="sm" variant="outline" onClick={onOpen}>Details <ChevronRight className="h-4 w-4" /></Button>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            {recruiterActions.map((action) => (
+        <details className="group relative">
+          <summary className="cursor-pointer list-none rounded-md border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+            More Actions
+          </summary>
+          <div className="absolute right-0 z-20 mt-2 grid w-56 gap-1 rounded-lg border bg-popover p-2 shadow-lg">
+            <Button size="sm" variant={compared ? "default" : "ghost"} className="justify-start" onClick={onCompare}><GitCompare className="h-4 w-4" /> {compared ? "Remove Compare" : "Compare"}</Button>
+            {moreActions.map((action) => (
               <Button
                 key={action}
                 size="sm"
-                variant={action === result.nextBestAction ? "default" : action === "Archive" ? "ghost" : "outline"}
+                variant={action === result.nextBestAction ? "secondary" : action === "Archive" ? "ghost" : "ghost"}
+                className="justify-start"
                 onClick={() => onAction(action)}
               >
                 {action === "Archive" && <Archive className="h-4 w-4" />}
@@ -1634,8 +1661,7 @@ function CandidateCard({ result, shortlisted, compared, onOpen, onShortlist, onC
               </Button>
             ))}
           </div>
-          <button type="button" onClick={onOpen} className="flex items-center gap-1 text-sm text-primary">Details <ChevronRight className="h-4 w-4" /></button>
-        </div>
+        </details>
       </div>
     </div>
   );
@@ -2043,7 +2069,7 @@ function CandidateDrawer({ selected, setSelected }: { selected: ScoredCandidate 
               <div><div className="mb-2 text-sm font-medium">Skills</div><div className="flex flex-wrap gap-1.5">{selected.candidate.skills.map((skill) => <Badge key={skill} variant="secondary" className="font-normal">{skill}</Badge>)}</div></div>
               <div className="grid gap-3 sm:grid-cols-2"><ExplainabilityList title="Missing" values={selected.missing} /><ExplainabilityList title="Risks" values={selected.risks} /></div>
               <div className="rounded-lg border p-4">
-                <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Resume Intelligence</div>
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Profile Intelligence</div>
                 <p className="text-sm text-muted-foreground">{resumeIntelligence.executiveSummary}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   <Badge>{resumeIntelligence.industry}</Badge>

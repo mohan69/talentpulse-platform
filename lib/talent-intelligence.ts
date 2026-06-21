@@ -143,6 +143,13 @@ export function buildResumeIntelligence(profile: TalentProfile, requiredSkills: 
 
 export function buildSubmissionCopilot(profile: TalentProfile, job?: TalentJob | null) {
   const intelligence = buildResumeIntelligence(profile, job?.skills ?? []);
+  const relevantYears = profile.relevantExperience && profile.relevantExperience > 0
+    ? profile.relevantExperience
+    : profile.totalExperience && profile.totalExperience > 0
+      ? profile.totalExperience
+      : profile.currentDesignation || profile.skills?.length
+        ? "Profile indicates relevant experience"
+        : 0;
   const compensation = [
     profile.currentCtc ? `Current ${Math.round(profile.currentCtc / 100000)} LPA` : "Current CTC missing",
     profile.expectedCtc ? `Expected ${Math.round(profile.expectedCtc / 100000)} LPA` : "Expected CTC missing",
@@ -153,7 +160,7 @@ export function buildSubmissionCopilot(profile: TalentProfile, job?: TalentJob |
     candidateSummary: intelligence.executiveSummary,
     whyFit: intelligence.strengths.length ? intelligence.strengths.join("; ") : "Requires recruiter screening before submission.",
     skillsMatch: job?.skills?.length ? `${intelligence.matchedSkills.length}/${job.skills.length} required skills matched` : "No job skill requirement attached",
-    relevantExperience: `${profile.relevantExperience ?? profile.totalExperience ?? 0} years relevant; ${profile.currentDesignation ?? "role not specified"}`,
+    relevantExperience: typeof relevantYears === "number" ? `${relevantYears} years relevant; ${profile.currentDesignation ?? "role not specified"}` : `${relevantYears}; ${profile.currentDesignation ?? "role not specified"}`,
     compensationSummary: compensation,
     noticeSummary: profile.noticePeriod != null ? `${profile.noticePeriod} days notice` : "Notice period not captured",
     recruiterRecommendation: intelligence.risks.length > 1 ? "Screen before submission and verify risk items." : "Good candidate for recruiter screening and client-ready package.",
