@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
@@ -954,6 +955,11 @@ function portalSourceKey(name: string) {
 const portalConfigPrefix = "TP_PORTAL_CONFIG::";
 type PortalSubscriptionStatus = "Active" | "Expiring" | "Expired" | "Trial";
 type CredentialStatus = "Configured" | "Missing" | "Invalid";
+type AccessMethod = "Manual login" | "CSV export/import" | "XLSX export/import" | "Resume download/import" | "Official API" | "Partner API" | "Public API" | "Not available";
+type ApiAvailability = "Yes" | "No" | "Unknown";
+type ApiAuthMethod = "API key" | "OAuth" | "Basic" | "Partner token" | "Unknown";
+type ApiStatus = "Not configured" | "Configured" | "Invalid" | "Pending vendor approval";
+type PermissionState = "Yes" | "No" | "Unknown";
 type PortalConfigMetadata = {
   vendor?: string;
   annualCost?: number;
@@ -962,7 +968,57 @@ type PortalConfigMetadata = {
   status?: PortalSubscriptionStatus;
   credentialStatus?: CredentialStatus;
   usageNotes?: string;
+  portalLoginUrl?: string;
+  recruiterDashboardUrl?: string;
+  resumeDatabaseUrl?: string;
+  exportDownloadUrl?: string;
+  supportUrl?: string;
+  accountId?: string;
+  vendorSubscriptionId?: string;
+  authorizedUsers?: string;
+  accessMethod?: AccessMethod;
+  apiAvailable?: ApiAvailability;
+  apiBaseUrl?: string;
+  apiDocumentationUrl?: string;
+  apiAuthMethod?: ApiAuthMethod;
+  secretStorageReference?: string;
+  apiStatus?: ApiStatus;
+  credentialVaultReference?: string;
+  lastVerifiedDate?: string;
+  verifiedBy?: string;
+  mfaEnabled?: PermissionState;
+  passwordRotationDate?: string;
+  credentialNotes?: string;
+  cvViewsMonth?: number;
+  emailsMonth?: number;
+  jobPostingsMonth?: number;
+  downloadLimitMonth?: number;
+  apiCallsMonth?: number;
+  usedThisMonth?: number;
+  remainingThisMonth?: number;
+  termsReviewed?: PermissionState;
+  exportPermitted?: PermissionState;
+  apiPermitted?: PermissionState;
+  dataRetentionNotes?: string;
+  consentRequirementNotes?: string;
+  defaultImportMethod?: AccessMethod;
+  allowedFileTypes?: string;
+  resumeDownloadAllowed?: PermissionState;
+  candidateContactFieldsAvailable?: PermissionState;
+  defaultSourceTag?: string;
+  deduplicationRule?: string;
 };
+const accessMethodOptions: [AccessMethod, string][] = [
+  ["Manual login", "Manual login"],
+  ["CSV export/import", "CSV export/import"],
+  ["XLSX export/import", "XLSX export/import"],
+  ["Resume download/import", "Resume download/import"],
+  ["Official API", "Official API"],
+  ["Partner API", "Partner API"],
+  ["Public API", "Public API"],
+  ["Not available", "Not available"],
+];
+const permissionOptions: [PermissionState, string][] = [["Yes", "Yes"], ["No", "No"], ["Unknown", "Unknown"]];
 
 function parsePortalConfig(notes: string | null | undefined): PortalConfigMetadata {
   if (!notes) return {};
@@ -1012,6 +1068,9 @@ function portalRegistryRows(portals: ManagedPortal[]) {
     const status = !platform ? "Not configured" : !primary ? "Needs subscription" : derivePortalStatus(primary, platform.isActive, config);
     const seatsPurchased = Number(config.seatsPurchased ?? 0);
     const seatsUsed = Number(config.seatsUsed ?? 0);
+    const monthlyLimit = Number(config.downloadLimitMonth ?? config.cvViewsMonth ?? primary?.profileLimit ?? 0);
+    const usedThisMonth = Number(config.usedThisMonth ?? primary?.profilesUsed ?? 0);
+    const remainingThisMonth = Number(config.remainingThisMonth ?? (monthlyLimit ? Math.max(0, monthlyLimit - usedThisMonth) : 0));
     return {
       platformId: platform?.id ?? null,
       subscriptionId: primary?.id ?? null,
@@ -1032,6 +1091,13 @@ function portalRegistryRows(portals: ManagedPortal[]) {
       renewalDate: primary?.validUntil ?? null,
       credentialStatus: config.credentialStatus ?? (primary?.username ? "Configured" : "Missing"),
       usageNotes: config.usageNotes ?? "",
+      accessMethod: config.accessMethod ?? allowedImportMethod(portalName),
+      apiAvailable: config.apiAvailable ?? "Unknown",
+      apiStatus: config.apiStatus ?? "Not configured",
+      exportPermitted: config.exportPermitted ?? "Unknown",
+      monthlyLimit,
+      usedThisMonth,
+      remainingThisMonth,
       allowedImportMethod: allowedImportMethod(portalName),
       status,
       rawSubscription: primary,
@@ -2311,8 +2377,9 @@ function ManagedSourcingOperations({
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Portal Sources</div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {activePortals.map((portal) => (
-                  <label key={portal.portalName} className="flex items-center gap-2 rounded-lg border p-2 text-sm">
+                  <label key={portal.portalName} className="flex items-start gap-2 rounded-lg border p-2 text-sm">
                     <input
+                      className="mt-1"
                       type="checkbox"
                       checked={assignmentForm.portalNames.includes(portal.portalName)}
                       onChange={(event) => setAssignmentForm((current) => ({
@@ -2322,7 +2389,13 @@ function ManagedSourcingOperations({
                           : current.portalNames.filter((item) => item !== portal.portalName),
                       }))}
                     />
-                    <span>{portal.portalName}</span>
+                    <span className="min-w-0">
+                      <span className="block font-medium">{portal.portalName}</span>
+                      <span className="block text-xs text-muted-foreground">{portal.accessMethod} · {portal.status} · {portal.monthlyLimit ? portal.remainingThisMonth : portal.availableCredits ?? "Usage-based"} remaining</span>
+                      {(portal.apiStatus !== "Configured" && ["Official API", "Partner API", "Public API"].includes(portal.accessMethod)) || (portal.exportPermitted !== "Yes" && portal.accessMethod.toLowerCase().includes("export")) ? (
+                        <span className="mt-1 block text-xs text-amber-600">Check API/export configuration before use.</span>
+                      ) : null}
+                    </span>
                   </label>
                 ))}
                 {!activePortals.length && <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">Configure an Active portal subscription first.</div>}
@@ -2429,12 +2502,53 @@ function PortalConfigDialog({
     credentialStatus: "Missing" as CredentialStatus,
     loginOwner: "",
     usageNotes: "",
+    portalLoginUrl: "",
+    recruiterDashboardUrl: "",
+    resumeDatabaseUrl: "",
+    exportDownloadUrl: "",
+    supportUrl: "",
+    accountId: "",
+    vendorSubscriptionId: "",
+    authorizedUsers: "",
+    accessMethod: "Manual login" as AccessMethod,
+    apiAvailable: "Unknown" as ApiAvailability,
+    apiBaseUrl: "",
+    apiDocumentationUrl: "",
+    apiAuthMethod: "Unknown" as ApiAuthMethod,
+    secretStorageReference: "",
+    apiStatus: "Not configured" as ApiStatus,
+    credentialVaultReference: "",
+    lastVerifiedDate: "",
+    verifiedBy: "",
+    mfaEnabled: "Unknown" as PermissionState,
+    passwordRotationDate: "",
+    credentialNotes: "",
+    cvViewsMonth: "",
+    emailsMonth: "",
+    jobPostingsMonth: "",
+    downloadLimitMonth: "",
+    apiCallsMonth: "",
+    usedThisMonth: "",
+    remainingThisMonth: "",
+    termsReviewed: "Unknown" as PermissionState,
+    exportPermitted: "Unknown" as PermissionState,
+    apiPermitted: "Unknown" as PermissionState,
+    dataRetentionNotes: "",
+    consentRequirementNotes: "",
+    defaultImportMethod: "CSV export/import" as AccessMethod,
+    allowedFileTypes: "CSV, XLSX, PDF, DOCX",
+    resumeDownloadAllowed: "Unknown" as PermissionState,
+    candidateContactFieldsAvailable: "Unknown" as PermissionState,
+    defaultSourceTag: "",
+    deduplicationRule: "Email, phone, or name + company",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiTestMessage, setApiTestMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!portal) return;
+    const config = parsePortalConfig(portal.rawSubscription?.notes);
     setForm({
       portalName: portal.configuredName,
       subscriptionOwnerId: portal.subscriptionOwnerId || recruiters[0]?.id || "",
@@ -2449,8 +2563,48 @@ function PortalConfigDialog({
       credentialStatus: ["Configured", "Missing", "Invalid"].includes(String(portal.credentialStatus)) ? portal.credentialStatus as CredentialStatus : "Missing",
       loginOwner: portal.loginOwner === "Not assigned" ? "" : portal.loginOwner,
       usageNotes: portal.usageNotes,
+      portalLoginUrl: config.portalLoginUrl ?? "",
+      recruiterDashboardUrl: config.recruiterDashboardUrl ?? "",
+      resumeDatabaseUrl: config.resumeDatabaseUrl ?? "",
+      exportDownloadUrl: config.exportDownloadUrl ?? "",
+      supportUrl: config.supportUrl ?? "",
+      accountId: config.accountId ?? "",
+      vendorSubscriptionId: config.vendorSubscriptionId ?? "",
+      authorizedUsers: config.authorizedUsers ?? "",
+      accessMethod: config.accessMethod ?? portal.accessMethod as AccessMethod,
+      apiAvailable: config.apiAvailable ?? "Unknown",
+      apiBaseUrl: config.apiBaseUrl ?? "",
+      apiDocumentationUrl: config.apiDocumentationUrl ?? "",
+      apiAuthMethod: config.apiAuthMethod ?? "Unknown",
+      secretStorageReference: config.secretStorageReference ?? "",
+      apiStatus: config.apiStatus ?? "Not configured",
+      credentialVaultReference: config.credentialVaultReference ?? "",
+      lastVerifiedDate: config.lastVerifiedDate ?? "",
+      verifiedBy: config.verifiedBy ?? "",
+      mfaEnabled: config.mfaEnabled ?? "Unknown",
+      passwordRotationDate: config.passwordRotationDate ?? "",
+      credentialNotes: config.credentialNotes ?? "",
+      cvViewsMonth: config.cvViewsMonth ? String(config.cvViewsMonth) : portal.rawSubscription?.profileLimit ? String(portal.rawSubscription.profileLimit) : "",
+      emailsMonth: config.emailsMonth ? String(config.emailsMonth) : "",
+      jobPostingsMonth: config.jobPostingsMonth ? String(config.jobPostingsMonth) : portal.rawSubscription?.jobPostLimit ? String(portal.rawSubscription.jobPostLimit) : "",
+      downloadLimitMonth: config.downloadLimitMonth ? String(config.downloadLimitMonth) : "",
+      apiCallsMonth: config.apiCallsMonth ? String(config.apiCallsMonth) : "",
+      usedThisMonth: config.usedThisMonth ? String(config.usedThisMonth) : portal.rawSubscription?.profilesUsed ? String(portal.rawSubscription.profilesUsed) : "",
+      remainingThisMonth: config.remainingThisMonth ? String(config.remainingThisMonth) : portal.remainingThisMonth ? String(portal.remainingThisMonth) : "",
+      termsReviewed: config.termsReviewed ?? "Unknown",
+      exportPermitted: config.exportPermitted ?? "Unknown",
+      apiPermitted: config.apiPermitted ?? "Unknown",
+      dataRetentionNotes: config.dataRetentionNotes ?? "",
+      consentRequirementNotes: config.consentRequirementNotes ?? "",
+      defaultImportMethod: config.defaultImportMethod ?? portal.accessMethod as AccessMethod,
+      allowedFileTypes: config.allowedFileTypes ?? "CSV, XLSX, PDF, DOCX",
+      resumeDownloadAllowed: config.resumeDownloadAllowed ?? "Unknown",
+      candidateContactFieldsAvailable: config.candidateContactFieldsAvailable ?? "Unknown",
+      defaultSourceTag: config.defaultSourceTag ?? portal.portalName,
+      deduplicationRule: config.deduplicationRule ?? "Email, phone, or name + company",
     });
     setError(null);
+    setApiTestMessage(null);
   }, [portal, recruiters]);
 
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
@@ -2465,6 +2619,66 @@ function PortalConfigDialog({
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? "Portal configuration save failed");
     return body;
+  }
+
+  function metadataFromForm(statusOverride?: PortalSubscriptionStatus): PortalConfigMetadata {
+    return {
+      vendor: form.vendor.trim(),
+      annualCost: Number(form.annualCost || (Number(form.monthlyCost || 0) * 12)),
+      seatsPurchased: Number(form.seatsPurchased || 0),
+      seatsUsed: Number(form.seatsUsed || 0),
+      status: statusOverride ?? form.status,
+      credentialStatus: form.credentialStatus,
+      usageNotes: form.usageNotes.trim(),
+      portalLoginUrl: form.portalLoginUrl.trim(),
+      recruiterDashboardUrl: form.recruiterDashboardUrl.trim(),
+      resumeDatabaseUrl: form.resumeDatabaseUrl.trim(),
+      exportDownloadUrl: form.exportDownloadUrl.trim(),
+      supportUrl: form.supportUrl.trim(),
+      accountId: form.accountId.trim(),
+      vendorSubscriptionId: form.vendorSubscriptionId.trim(),
+      authorizedUsers: form.authorizedUsers.trim(),
+      accessMethod: form.accessMethod,
+      apiAvailable: form.apiAvailable,
+      apiBaseUrl: form.apiBaseUrl.trim(),
+      apiDocumentationUrl: form.apiDocumentationUrl.trim(),
+      apiAuthMethod: form.apiAuthMethod,
+      secretStorageReference: form.secretStorageReference.trim(),
+      apiStatus: form.apiStatus,
+      credentialVaultReference: form.credentialVaultReference.trim(),
+      lastVerifiedDate: form.lastVerifiedDate,
+      verifiedBy: form.verifiedBy.trim(),
+      mfaEnabled: form.mfaEnabled,
+      passwordRotationDate: form.passwordRotationDate,
+      credentialNotes: form.credentialNotes.trim(),
+      cvViewsMonth: Number(form.cvViewsMonth || 0),
+      emailsMonth: Number(form.emailsMonth || 0),
+      jobPostingsMonth: Number(form.jobPostingsMonth || 0),
+      downloadLimitMonth: Number(form.downloadLimitMonth || 0),
+      apiCallsMonth: Number(form.apiCallsMonth || 0),
+      usedThisMonth: Number(form.usedThisMonth || 0),
+      remainingThisMonth: Number(form.remainingThisMonth || 0),
+      termsReviewed: form.termsReviewed,
+      exportPermitted: form.exportPermitted,
+      apiPermitted: form.apiPermitted,
+      dataRetentionNotes: form.dataRetentionNotes.trim(),
+      consentRequirementNotes: form.consentRequirementNotes.trim(),
+      defaultImportMethod: form.defaultImportMethod,
+      allowedFileTypes: form.allowedFileTypes.trim(),
+      resumeDownloadAllowed: form.resumeDownloadAllowed,
+      candidateContactFieldsAvailable: form.candidateContactFieldsAvailable,
+      defaultSourceTag: form.defaultSourceTag.trim(),
+      deduplicationRule: form.deduplicationRule.trim(),
+    };
+  }
+
+  function testApiMetadata() {
+    const missing = [];
+    if (form.apiAvailable === "Yes" && !form.apiBaseUrl.trim()) missing.push("API base URL");
+    if (form.apiAvailable === "Yes" && !form.apiDocumentationUrl.trim()) missing.push("API documentation URL");
+    if (form.apiAvailable === "Yes" && form.apiAuthMethod === "Unknown") missing.push("Auth method");
+    if (form.apiAvailable === "Yes" && !form.secretStorageReference.trim()) missing.push("Secret storage reference");
+    setApiTestMessage(missing.length ? `Metadata incomplete: ${missing.join(", ")}.` : "Metadata looks configured. No external API call was made.");
   }
 
   async function save() {
@@ -2501,20 +2715,15 @@ function PortalConfigDialog({
         platformId = platform.id;
       }
 
-      const notes = serializePortalConfig({
-        vendor: form.vendor.trim(),
-        annualCost: Number(form.annualCost || (Number(form.monthlyCost || 0) * 12)),
-        seatsPurchased: Number(form.seatsPurchased || 0),
-        seatsUsed: Number(form.seatsUsed || 0),
-        status: form.status,
-        credentialStatus: form.credentialStatus,
-        usageNotes: form.usageNotes.trim(),
-      });
+      const notes = serializePortalConfig(metadataFromForm());
       const subscriptionBody = {
         platformId,
         recruiterId: form.subscriptionOwnerId,
         username: form.loginOwner.trim() || null,
         planName: form.planType.trim() || null,
+        profileLimit: form.cvViewsMonth || form.downloadLimitMonth || undefined,
+        jobPostLimit: form.jobPostingsMonth || undefined,
+        profilesUsed: form.usedThisMonth || undefined,
         monthlyCost: form.monthlyCost,
         validUntil: form.renewalDate || null,
         isActive: form.status !== "Expired",
@@ -2548,15 +2757,7 @@ function PortalConfigDialog({
         method: "PATCH",
         body: JSON.stringify({
           isActive: false,
-          notes: serializePortalConfig({
-            vendor: form.vendor.trim(),
-            annualCost: Number(form.annualCost || (Number(form.monthlyCost || 0) * 12)),
-            seatsPurchased: Number(form.seatsPurchased || 0),
-            seatsUsed: Number(form.seatsUsed || 0),
-            status: "Expired",
-            credentialStatus: form.credentialStatus,
-            usageNotes: form.usageNotes.trim(),
-          }),
+          notes: serializePortalConfig(metadataFromForm("Expired")),
         }),
       });
       window.location.reload();
@@ -2569,30 +2770,124 @@ function PortalConfigDialog({
 
   return (
     <Dialog open={Boolean(portal)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{portal?.subscriptionId ? "Edit Portal Subscription" : "Add Portal Subscription"}</DialogTitle>
           <DialogDescription>Configure authorized sourcing subscription details. Credentials are tracked by status only and secrets are not displayed here.</DialogDescription>
         </DialogHeader>
         {portal && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FilterInput label="Portal Name" value={form.portalName} onChange={(value) => set("portalName", value)} />
-            <SelectLike label="Subscription Owner" value={form.subscriptionOwnerId} onChange={(value) => set("subscriptionOwnerId", value)} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
-            <FilterInput label="Vendor" value={form.vendor} onChange={(value) => set("vendor", value)} />
-            <FilterInput label="Plan Type" value={form.planType} onChange={(value) => set("planType", value)} />
-            <FilterInput label="Monthly Cost" value={form.monthlyCost} onChange={(value) => set("monthlyCost", value)} />
-            <FilterInput label="Annual Cost" value={form.annualCost} onChange={(value) => set("annualCost", value)} />
-            <FilterInput label="Seats Purchased" value={form.seatsPurchased} onChange={(value) => set("seatsPurchased", value)} />
-            <FilterInput label="Seats Used" value={form.seatsUsed} onChange={(value) => set("seatsUsed", value)} />
-            <FilterInput label="Renewal Date" value={form.renewalDate} onChange={(value) => set("renewalDate", value)} />
-            <SelectLike label="Status" value={form.status} onChange={(value) => set("status", value as PortalSubscriptionStatus)} options={[["Active", "Active"], ["Expiring", "Expiring"], ["Expired", "Expired"], ["Trial", "Trial"]]} />
-            <SelectLike label="Credential Status" value={form.credentialStatus} onChange={(value) => set("credentialStatus", value as CredentialStatus)} options={[["Configured", "Configured"], ["Missing", "Missing"], ["Invalid", "Invalid"]]} />
-            <FilterInput label="Login Owner" value={form.loginOwner} onChange={(value) => set("loginOwner", value)} />
-            <label className="block text-sm sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Usage Notes</span>
-              <Textarea value={form.usageNotes} onChange={(event) => set("usageNotes", event.target.value)} rows={3} placeholder="Credits, contract constraints, allowed import method, support notes..." />
-            </label>
-          </div>
+          <Tabs defaultValue="subscription" className="space-y-4">
+            <TabsList className="h-auto w-full flex-wrap justify-start">
+              <TabsTrigger value="subscription">Subscription</TabsTrigger>
+              <TabsTrigger value="access">Access</TabsTrigger>
+              <TabsTrigger value="api">API</TabsTrigger>
+              <TabsTrigger value="usage">Usage</TabsTrigger>
+              <TabsTrigger value="compliance">Compliance</TabsTrigger>
+              <TabsTrigger value="mapping">Import Mapping</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="subscription" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FilterInput label="Portal Name" value={form.portalName} onChange={(value) => set("portalName", value)} />
+                <SelectLike label="Subscription Owner" value={form.subscriptionOwnerId} onChange={(value) => set("subscriptionOwnerId", value)} options={recruiters.map((recruiter) => [recruiter.id, recruiter.name ?? recruiter.email])} />
+                <FilterInput label="Vendor" value={form.vendor} onChange={(value) => set("vendor", value)} />
+                <FilterInput label="Plan Type" value={form.planType} onChange={(value) => set("planType", value)} />
+                <FilterInput label="Monthly Cost" value={form.monthlyCost} onChange={(value) => set("monthlyCost", value)} />
+                <FilterInput label="Annual Cost" value={form.annualCost} onChange={(value) => set("annualCost", value)} />
+                <FilterInput label="Seats Purchased" value={form.seatsPurchased} onChange={(value) => set("seatsPurchased", value)} />
+                <FilterInput label="Seats Used" value={form.seatsUsed} onChange={(value) => set("seatsUsed", value)} />
+                <FilterInput label="Renewal Date" value={form.renewalDate} onChange={(value) => set("renewalDate", value)} />
+                <SelectLike label="Status" value={form.status} onChange={(value) => set("status", value as PortalSubscriptionStatus)} options={[["Active", "Active"], ["Expiring", "Expiring"], ["Expired", "Expired"], ["Trial", "Trial"]]} />
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Usage Notes</span>
+                  <Textarea value={form.usageNotes} onChange={(event) => set("usageNotes", event.target.value)} rows={3} placeholder="Contract constraints, support commitments, portal limitations..." />
+                </label>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="access" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FilterInput label="Portal Login URL" value={form.portalLoginUrl} onChange={(value) => set("portalLoginUrl", value)} />
+                <FilterInput label="Recruiter Dashboard URL" value={form.recruiterDashboardUrl} onChange={(value) => set("recruiterDashboardUrl", value)} />
+                <FilterInput label="Resume Database URL" value={form.resumeDatabaseUrl} onChange={(value) => set("resumeDatabaseUrl", value)} />
+                <FilterInput label="Export / Download URL" value={form.exportDownloadUrl} onChange={(value) => set("exportDownloadUrl", value)} />
+                <FilterInput label="Support URL" value={form.supportUrl} onChange={(value) => set("supportUrl", value)} />
+                <FilterInput label="Account ID / Customer ID" value={form.accountId} onChange={(value) => set("accountId", value)} />
+                <FilterInput label="Subscription ID" value={form.vendorSubscriptionId} onChange={(value) => set("vendorSubscriptionId", value)} />
+                <FilterInput label="Login Owner" value={form.loginOwner} onChange={(value) => set("loginOwner", value)} />
+                <SelectLike label="Access Method" value={form.accessMethod} onChange={(value) => set("accessMethod", value as AccessMethod)} options={accessMethodOptions} />
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Authorized Users</span>
+                  <Textarea value={form.authorizedUsers} onChange={(event) => set("authorizedUsers", event.target.value)} rows={3} placeholder="Names, emails or teams authorized to use this subscription..." />
+                </label>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="api" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectLike label="API Available" value={form.apiAvailable} onChange={(value) => set("apiAvailable", value as ApiAvailability)} options={[["Yes", "Yes"], ["No", "No"], ["Unknown", "Unknown"]]} />
+                <SelectLike label="Auth Method" value={form.apiAuthMethod} onChange={(value) => set("apiAuthMethod", value as ApiAuthMethod)} options={[["API key", "API key"], ["OAuth", "OAuth"], ["Basic", "Basic"], ["Partner token", "Partner token"], ["Unknown", "Unknown"]]} />
+                <FilterInput label="API Base URL" value={form.apiBaseUrl} onChange={(value) => set("apiBaseUrl", value)} />
+                <FilterInput label="API Documentation URL" value={form.apiDocumentationUrl} onChange={(value) => set("apiDocumentationUrl", value)} />
+                <FilterInput label="Secret Storage Reference" value={form.secretStorageReference} onChange={(value) => set("secretStorageReference", value)} />
+                <SelectLike label="API Status" value={form.apiStatus} onChange={(value) => set("apiStatus", value as ApiStatus)} options={[["Not configured", "Not configured"], ["Configured", "Configured"], ["Invalid", "Invalid"], ["Pending vendor approval", "Pending vendor approval"]]} />
+              </div>
+              <div className="mt-4 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Only metadata is stored here. Raw API keys, tokens and passwords must live in an approved secret vault.</div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" onClick={testApiMetadata}>Test Connection Metadata</Button>
+                {apiTestMessage && <span className="text-sm text-muted-foreground">{apiTestMessage}</span>}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="usage" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectLike label="Credential Status" value={form.credentialStatus} onChange={(value) => set("credentialStatus", value as CredentialStatus)} options={[["Configured", "Configured"], ["Missing", "Missing"], ["Invalid", "Invalid"]]} />
+                <FilterInput label="Credential Vault Reference" value={form.credentialVaultReference} onChange={(value) => set("credentialVaultReference", value)} />
+                <FilterInput label="Last Verified Date" value={form.lastVerifiedDate} onChange={(value) => set("lastVerifiedDate", value)} />
+                <FilterInput label="Verified By" value={form.verifiedBy} onChange={(value) => set("verifiedBy", value)} />
+                <SelectLike label="MFA Enabled" value={form.mfaEnabled} onChange={(value) => set("mfaEnabled", value as PermissionState)} options={permissionOptions} />
+                <FilterInput label="Password Rotation Date" value={form.passwordRotationDate} onChange={(value) => set("passwordRotationDate", value)} />
+                <FilterInput label="CV Views / Month" value={form.cvViewsMonth} onChange={(value) => set("cvViewsMonth", value)} />
+                <FilterInput label="Emails / Month" value={form.emailsMonth} onChange={(value) => set("emailsMonth", value)} />
+                <FilterInput label="Job Postings / Month" value={form.jobPostingsMonth} onChange={(value) => set("jobPostingsMonth", value)} />
+                <FilterInput label="Download Limit / Month" value={form.downloadLimitMonth} onChange={(value) => set("downloadLimitMonth", value)} />
+                <FilterInput label="API Calls / Month" value={form.apiCallsMonth} onChange={(value) => set("apiCallsMonth", value)} />
+                <FilterInput label="Used This Month" value={form.usedThisMonth} onChange={(value) => set("usedThisMonth", value)} />
+                <FilterInput label="Remaining This Month" value={form.remainingThisMonth} onChange={(value) => set("remainingThisMonth", value)} />
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Credential Notes</span>
+                  <Textarea value={form.credentialNotes} onChange={(event) => set("credentialNotes", event.target.value)} rows={3} placeholder="MFA process, owner escalation, verification notes. Do not store passwords." />
+                </label>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="compliance" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectLike label="Terms Reviewed" value={form.termsReviewed} onChange={(value) => set("termsReviewed", value as PermissionState)} options={permissionOptions} />
+                <SelectLike label="Export Permitted" value={form.exportPermitted} onChange={(value) => set("exportPermitted", value as PermissionState)} options={permissionOptions} />
+                <SelectLike label="API Permitted" value={form.apiPermitted} onChange={(value) => set("apiPermitted", value as PermissionState)} options={permissionOptions} />
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Data Retention Notes</span>
+                  <Textarea value={form.dataRetentionNotes} onChange={(event) => set("dataRetentionNotes", event.target.value)} rows={3} />
+                </label>
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Consent Requirement Notes</span>
+                  <Textarea value={form.consentRequirementNotes} onChange={(event) => set("consentRequirementNotes", event.target.value)} rows={3} />
+                </label>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="mapping" className="mt-0">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectLike label="Default Import Method" value={form.defaultImportMethod} onChange={(value) => set("defaultImportMethod", value as AccessMethod)} options={accessMethodOptions} />
+                <FilterInput label="Allowed File Types" value={form.allowedFileTypes} onChange={(value) => set("allowedFileTypes", value)} />
+                <SelectLike label="Resume Download Allowed" value={form.resumeDownloadAllowed} onChange={(value) => set("resumeDownloadAllowed", value as PermissionState)} options={permissionOptions} />
+                <SelectLike label="Candidate Contact Fields Available" value={form.candidateContactFieldsAvailable} onChange={(value) => set("candidateContactFieldsAvailable", value as PermissionState)} options={permissionOptions} />
+                <FilterInput label="Default Source Tag" value={form.defaultSourceTag} onChange={(value) => set("defaultSourceTag", value)} />
+                <FilterInput label="Deduplication Rule" value={form.deduplicationRule} onChange={(value) => set("deduplicationRule", value)} />
+              </div>
+            </TabsContent>
+          </Tabs>
         )}
         {error && <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
         <DialogFooter className="gap-2 sm:justify-between">
@@ -2733,7 +3028,7 @@ function SourceRoiTable({ rows }: { rows: { portal: ReturnType<typeof portalRegi
             {rows.filter((row) => row.portal.monthlyCost > 0 || row.searches > 0 || row.imported > 0).map((row) => (
               <TableRow key={row.portal.portalName}>
                 <TableCell><div className="font-medium">{row.portal.portalName}</div><div className="text-xs text-muted-foreground">CPQ {formatMoney(row.costPerQualified)} · CPP {formatMoney(row.costPerPlacement)}</div></TableCell>
-                <TableCell><div>{formatMoney(row.portal.monthlyCost)}/mo</div><div className="text-xs text-muted-foreground">{formatMoney(row.portal.annualCost)}/yr</div></TableCell>
+                <TableCell><div>{formatMoney(row.portal.monthlyCost)}/mo</div><div className="text-xs text-muted-foreground">{formatMoney(row.portal.annualCost)}/yr · {row.portal.monthlyLimit ? row.portal.remainingThisMonth : "Usage-based"} remaining</div></TableCell>
                 <TableCell>{row.searches}</TableCell>
                 <TableCell>{row.viewed}</TableCell>
                 <TableCell>{row.imported}</TableCell>
