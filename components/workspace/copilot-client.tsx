@@ -16,6 +16,7 @@ const EXAMPLE_PROMPTS = [
   { label: "Generate questions", icon: ListChecks, prompt: "Generate 8 interview questions for an AI Solutions Architect role. The role requires expertise in LLMs, RAG architectures, MLOps, and team leadership. Include 2 coding scenario questions." },
   { label: "Write outreach email", icon: Mail, prompt: "Write a professional outreach email to a Manufacturing Sales Director candidate. The role is at a leading industrial automation company expanding into EV battery manufacturing. Candidate has 18+ years of experience in industrial sales. Tone: professional and compelling." },
   { label: "LinkedIn message", icon: Linkedin, prompt: "Write a concise LinkedIn InMail message to a Plant Operations Head in the FMCG sector. Role is with a multinational food processing company. Keep it under 150 characters for the preview. Mention the company name and role." },
+  { label: "Search queries", icon: Briefcase, prompt: "Generate 10 Boolean search queries to find SAP SD Consultants with S/4HANA experience in Bangalore. Include variations for different experience levels (5-8 years, 8-12 years) and certification filters (PMP, SAP Certified). Also suggest alternative roles and industries to source from." },
 ];
 
 export function CopilotClient() {

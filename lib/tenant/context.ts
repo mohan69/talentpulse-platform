@@ -22,7 +22,7 @@ const validModes = new Set<TenantEnforcementMode>(["off", "observe", "warn", "en
 const configuredMode = process.env.TENANT_ENFORCEMENT_MODE as TenantEnforcementMode | undefined;
 
 export const tenantEnforcementMode: TenantEnforcementMode =
-  configuredMode && validModes.has(configuredMode) && configuredMode === "observe" ? "observe" : "enforce";
+  configuredMode && validModes.has(configuredMode) ? configuredMode : "enforce";
 
 function logObserve(message: string, metadata?: Record<string, unknown>) {
   if (tenantEnforcementMode === "observe" || tenantEnforcementMode === "warn") {

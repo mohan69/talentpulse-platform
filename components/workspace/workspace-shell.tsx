@@ -43,6 +43,9 @@ import {
   ClipboardCheck,
   DollarSign,
   UploadCloud,
+  Phone,
+  MessageCircle,
+  UserPlus,
 } from "lucide-react";
 import { initials } from "@/lib/format";
 import { GlobalSearch } from "@/components/workspace/global-search";
@@ -67,6 +70,11 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { href: "/admin/outreach", label: "Outreach", icon: Send },
     { href: "/admin/closures", label: "Closures", icon: Sparkles },
     { href: "/admin/copilot", label: "Copilot", icon: Bot },
+    { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/admin/clients", label: "Clients", icon: Building2 },
+    { href: "/admin/prospects", label: "Prospects", icon: UserPlus },
+    { href: "/admin/voice-screening", label: "Voice Screening", icon: Phone },
+    { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
     { href: "/admin/reports", label: "Reports", icon: FileBarChart },
     { href: "/admin/settings", label: "Settings", icon: Settings },
   ],
@@ -74,10 +82,12 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { href: "/recruiter", label: "Dashboard", icon: LayoutDashboard },
     { href: "/recruiter/jobs", label: "Requisitions", icon: Briefcase },
     { href: "/recruiter/candidates", label: "Talent Repository", icon: Users },
-    { href: "/recruiter/sourcing-intelligence", label: "Sourcing Intelligence", icon: Radar },
     { href: "/recruiter/pipeline", label: "Pipeline", icon: KanbanSquare },
     { href: "/recruiter/interviews", label: "Interviews", icon: Calendar },
     { href: "/recruiter/outreach", label: "Outreach", icon: Send },
+    { href: "/recruiter/prospects", label: "Prospects", icon: UserPlus },
+    { href: "/recruiter/voice-screening", label: "Voice Screening", icon: Phone },
+    { href: "/recruiter/whatsapp", label: "WhatsApp", icon: MessageCircle },
     { href: "/recruiter/copilot", label: "Copilot", icon: Bot },
   ],
   CLIENT: [

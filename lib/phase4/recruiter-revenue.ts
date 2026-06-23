@@ -58,16 +58,16 @@ const stageOrder: Record<string, number> = {
 };
 
 const stageProbability: Record<string, number> = {
-  NEW: 0.08,
-  AI_SCREENING: 0.12,
-  REVIEWED: 0.18,
-  SUBMITTED: 0.32,
-  INTERVIEW_SCHEDULED: 0.48,
-  INTERVIEW_COMPLETE: 0.62,
-  OFFER_EXTENDED: 0.78,
-  OFFER_ACCEPTED: 0.9,
+  NEW: 0.02,
+  AI_SCREENING: 0.05,
+  REVIEWED: 0.08,
+  SUBMITTED: 0.15,
+  INTERVIEW_SCHEDULED: 0.25,
+  INTERVIEW_COMPLETE: 0.35,
+  OFFER_EXTENDED: 0.6,
+  OFFER_ACCEPTED: 0.85,
   JOINED: 1,
-  ON_HOLD: 0.12,
+  ON_HOLD: 0.05,
   REJECTED: 0,
 };
 

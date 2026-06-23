@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, Send, X } from "lucide-react";
+import { Loader2, Plus, Send, X, CheckCircle, XCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 /* ---------- Add Note ---------- */
@@ -177,6 +177,51 @@ export function EmailComposeDialog({ candidateId, candidateEmail, candidateName 
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
       </div>
+    </div>
+  );
+}
+
+/* ---------- Memory Action Buttons ---------- */
+export function MemoryActionButtons({ memoryId }: { memoryId: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState<string | null>(null);
+
+  async function handleAction(action: "confirm" | "dismiss") {
+    setLoading(action);
+    try {
+      const res = await fetch(`/api/memory/${memoryId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "dismiss" ? { reason: "Dismissed by recruiter" } : {}),
+      });
+      if (!res.ok) throw new Error(`Failed to ${action} memory`);
+      toast.success(`Memory ${action}ed`);
+      router.refresh();
+    } catch (e: any) {
+      toast.error(e?.message || `Failed to ${action}`);
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <div className="flex gap-1">
+      <button
+        onClick={() => handleAction("confirm")}
+        disabled={loading !== null}
+        className="p-1 rounded hover:bg-emerald-100 text-emerald-600 transition-colors"
+        title="Confirm memory"
+      >
+        {loading === "confirm" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+      </button>
+      <button
+        onClick={() => handleAction("dismiss")}
+        disabled={loading !== null}
+        className="p-1 rounded hover:bg-rose-100 text-rose-500 transition-colors"
+        title="Dismiss memory"
+      >
+        {loading === "dismiss" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+      </button>
     </div>
   );
 }
