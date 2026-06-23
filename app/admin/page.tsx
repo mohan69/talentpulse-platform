@@ -43,12 +43,12 @@ export default async function AdminDashboard() {
 
   return (
     <>
-      <PageTitle title="Talent Intelligence Command Center" description="Your talent intelligence pulse at a glance." />
+      <PageTitle title="Dashboard" description="Your talent intelligence pulse at a glance." />
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard label="Prospects" value={totalProspects} icon={UserSearch} color="violet" hint="Active prospect leads" />
         <StatCard label="Open Jobs" value={openJobs} icon={Briefcase} color="primary" />
         <StatCard label="Candidates" value={totalCandidates} icon={Users} color="cyan" />
-        <StatCard label="Active Apps" value={activeApps} icon={TrendingUp} color="emerald" />
+        <StatCard label="Active Applications" value={activeApps} icon={TrendingUp} color="emerald" />
         <StatCard label="Interviews" value={scheduledInterviews} icon={Calendar} color="amber" />
       </div>
       <div className="grid lg:grid-cols-2 gap-6">

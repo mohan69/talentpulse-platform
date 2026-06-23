@@ -42,7 +42,7 @@ export function PipelineBoard({ applications, detailPathPrefix = "/admin/candida
                   <div className="flex items-center justify-between mt-2"><span className="text-xs text-muted-foreground">{c.candidate.currentCity ?? ""}</span>{c.matchScore !== null && <span className="text-xs font-semibold text-primary">{c.matchScore}%</span>}</div>
                 </div>
               ))}
-              {cards.length === 0 && <div className="text-xs text-muted-foreground/70 text-center py-4">Empty</div>}
+              {cards.length === 0 && <div className="text-xs text-muted-foreground/70 text-center py-4">Drag a candidate here</div>}
             </div>
           </div>
         );

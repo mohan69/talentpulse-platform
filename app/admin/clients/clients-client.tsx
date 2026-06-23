@@ -78,6 +78,13 @@ export function ClientsClient({ clients }: { clients: any[] }) {
       )}
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {clients.length === 0 && (
+          <div className="md:col-span-2 lg:col-span-3 rounded-xl border border-dashed p-12 text-center">
+            <Building2 className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="font-medium">No clients yet</p>
+            <p className="text-sm text-muted-foreground mt-1">Add your first client to start tracking positions and placements.</p>
+          </div>
+        )}
         {clients.map((c: any) => (
           <div key={c.id} className="rounded-xl bg-card shadow-sm p-5">
             <div className="flex items-start justify-between mb-3">

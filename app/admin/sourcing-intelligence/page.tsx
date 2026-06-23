@@ -193,7 +193,7 @@ export default async function AdminSourcingIntelligence() {
     <>
       <PageTitle
         title="Sourcing Intelligence"
-        description="Requisition-centric candidate acquisition, import quality, public discovery, freshness and source conversion intelligence."
+        description="Find and engage top talent. Search candidates, import profiles, discover passive talent, and track sourcing performance."
       />
       <SourcingIntelligenceClient
         candidates={candidates}
